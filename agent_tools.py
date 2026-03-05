@@ -24,11 +24,14 @@ import pyodbc
 import yaml
 import json
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any
 from decimal import Decimal
 from dotenv import load_dotenv
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 
 # Load environment variables from .env file
 load_dotenv()
@@ -385,6 +388,68 @@ class LearningManager:
 
 
 # =============================================================================
+# EXCEL EXPORTER
+# =============================================================================
+
+class ExcelExporter:
+    """Generate downloadable Excel files from query results."""
+
+    def __init__(self, export_path: str = "./exports"):
+        self.export_path = Path(export_path)
+        self.export_path.mkdir(exist_ok=True)
+
+    def export(self, columns: list[str], rows: list[list], filename: str = "") -> dict:
+        if not columns or not rows:
+            return {"success": False, "error": "No data to export"}
+
+        file_id = str(uuid.uuid4())[:8]
+        if not filename:
+            filename = f"export_{file_id}"
+        # Sanitize filename
+        safe_name = "".join(c for c in filename if c.isalnum() or c in "_- ").strip()
+        if not safe_name:
+            safe_name = f"export_{file_id}"
+        xlsx_name = f"{safe_name}_{file_id}.xlsx"
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Data"
+
+        # Header row
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1A1A2E", end_color="1A1A2E", fill_type="solid")
+        for col_idx, col_name in enumerate(columns, 1):
+            cell = ws.cell(row=1, column=col_idx, value=col_name)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+
+        # Data rows
+        for row_idx, row in enumerate(rows, 2):
+            for col_idx, value in enumerate(row, 1):
+                ws.cell(row=row_idx, column=col_idx, value=value)
+
+        # Auto-fit column widths (approximate)
+        for col_idx, col_name in enumerate(columns, 1):
+            max_len = len(str(col_name))
+            for row in rows[:100]:  # Sample first 100 rows
+                if col_idx - 1 < len(row):
+                    max_len = max(max_len, len(str(row[col_idx - 1] or "")))
+            ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = min(max_len + 3, 50)
+
+        filepath = self.export_path / xlsx_name
+        wb.save(filepath)
+
+        return {
+            "success": True,
+            "file_id": xlsx_name,
+            "download_url": f"/download/{xlsx_name}",
+            "row_count": len(rows),
+            "message": f"Excel file ready: {xlsx_name}"
+        }
+
+
+# =============================================================================
 # AGENT TOOLKIT - Main Interface
 # =============================================================================
 
@@ -398,6 +463,7 @@ class AgentToolkit:
         self.executor = QueryExecutor()
         self.context = ContextLoader()
         self.learning = LearningManager()
+        self.exporter = ExcelExporter()
     
     def get_tool_definitions(self) -> list[dict]:
         """Return tool definitions for LLM function calling."""
@@ -587,6 +653,32 @@ class AgentToolkit:
                         }
                     }
                 }
+            },
+
+            # === EXPORT TOOLS ===
+            {
+                "name": "export_excel",
+                "description": "Export data to a downloadable Excel (.xlsx) file. Pass the columns and rows from a previous execute_sql result. Returns a download link to include in your response.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "columns": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Column headers for the spreadsheet"
+                        },
+                        "rows": {
+                            "type": "array",
+                            "items": {"type": "array"},
+                            "description": "Data rows (array of arrays)"
+                        },
+                        "filename": {
+                            "type": "string",
+                            "description": "Descriptive filename (without extension), e.g. 'navel_inventory_march'"
+                        }
+                    },
+                    "required": ["columns", "rows"]
+                }
             }
         ]
     
@@ -620,6 +712,11 @@ class AgentToolkit:
             ),
             "get_learned_queries": lambda p: self.learning.get_learned_queries(p.get("search")),
             "get_discoveries": lambda p: self.learning.get_discoveries(p.get("category")),
+
+            # Export tools
+            "export_excel": lambda p: self.exporter.export(
+                p.get("columns", []), p.get("rows", []), p.get("filename", "")
+            ),
         }
         
         handler = handlers.get(tool_name)

@@ -25,6 +25,11 @@ row_count_approx: 87216
 refresh_frequency: "Real-time sync from LP system"
 
 columns:
+- name: SONO
+  type: nvarchar(8)
+  nullable: true
+  description: "Sales order number (e.g., '420570'). Unique order identifier."
+
 - name: SOStatus
   type: nvarchar(100)
   nullable: true
@@ -221,6 +226,7 @@ notes: |
   - Method column encodes packing specifications (coating, carton type, etc.)
   - Some SALEAMT = 0 records may be samples, internal transfers, or consignment
   - Food bank customers (CustomerName contains 'FOOD BANK') order in lbs, not cartons. Divide ORDERQNT by 40 to convert to carton equivalents for these orders.
+  - Juice orders (Grade = 'JUICE') with ORDERQNT > 1200 are in lbs, not units. Divide by 40 for carton equivalents.
 
 _sample_data:
 - SOStatus: Paid In Full

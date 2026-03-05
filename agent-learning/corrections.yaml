@@ -5,3 +5,17 @@ entries:
   wrong_assumption: CB means "consumer bags"
   correct_meaning: CB means "combo bags"
   applied_to_docs: false
+- timestamp: '2026-03-04T21:13:17.888987'
+  table: VW_LPSALESORDERS
+  column: SizeName
+  wrong_assumption: Size 088 is smaller than 113, and 072 is smaller than 088
+  correct_meaning: Size 088 is LARGER than 113, and 072 is LARGER than 088. Lower
+    numbers = bigger fruit = fewer per carton
+  applied_to_docs: false
+- timestamp: '2026-03-04T21:31:57.223589'
+  table: production_capacity
+  column: ''
+  wrong_assumption: 2,744 equiv ctns exceeds 6,000 capacity for Net Bag line
+  correct_meaning: 2,744 equiv ctns is well within the 5,000-6,000 capacity range
+    for Net Bag line (only 54% utilized)
+  applied_to_docs: false

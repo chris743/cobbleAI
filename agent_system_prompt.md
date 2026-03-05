@@ -86,6 +86,110 @@ GROUP BY Commodity, Size, Grade
 - Filter `FOBPrice > 0` and `equivqnt > 0` to exclude zero-price lines and non-product lines.
 - **Food bank orders**: If `CustomerName` contains 'FOOD BANK', ORDERQNT is in **lbs**, not cartons. Divide by 40 to convert to carton equivalents.
 
+## Production Schedule
+
+A production schedule is a **working document** the production team uses to knock out orders line by line. It is **demand-driven** and **organized by equipment line**.
+
+### Equipment Lines (Style Routing)
+
+Each style routes to a specific equipment line. Group orders by line:
+- **Film Bag line**: Styles containing `FB`
+- **Combo Bag line**: Styles containing `CB` — 2 machines (shared with WM)
+- **Net Bag line**: Styles containing `NB`
+- **Wicketed Mesh line**: Styles containing `WM`
+- **Header Bag line**: Styles containing `HD`
+- **Bulk line**: Everything else (CTN, 10# CARTON, BIN, etc.)
+
+### Shifts & Capacity
+
+**Shifts**: 2 per day
+- 1st shift: 4:00 AM – 2:00 PM (10 hrs)
+- 2nd shift: 2:00 PM – 12:00 AM (10 hrs)
+
+**Daily capacity by line** (both shifts combined):
+
+| Line | Daily Capacity | Notes |
+|------|---------------|-------|
+| Film Bag (FB) | ~360,000 bags / ~36,000–45,000 equiv ctns | Highest volume line |
+| Combo Bag (CB) + Wicketed Mesh (WM) | ~20,000 equiv ctns total | 2 machines, ~60 bags/min each, ~10,000 ctns/machine/day. WM runs on same machines — shared capacity |
+| Net Bag (NB) | ~5,000–6,000 equiv ctns | ~70 bags/min |
+| Header Bag (HD) | ~3,000 ctns | Hand pack line |
+| Bulk | ~20,000 ctns | Standard carton line |
+
+Use these capacities to determine how many days of orders each line can absorb. When total demand for a line exceeds daily capacity, flag it and show how the work spills into the next day. When a line has remaining capacity after today's orders, pull forward future orders for that line.
+
+### Building the Schedule
+
+**Step 1: Pull every open order line** with full detail — do NOT aggregate:
+```sql
+SELECT SONO, CustomerName, Commodity, Style, SizeName, Grade,
+    ORDERQNT, equivqnt, EQUIVFACTOR, UNITSPERPALLET,
+    CAST(SHIPDATETIME AS DATE) as ShipDate,
+    SOStatus, RESERVEQNT
+FROM dbo.VW_LPSALESORDERS
+WHERE CAST(SHIPDATETIME AS DATE) >= CAST(GETDATE() AS DATE)
+  AND ORDERQNT > 0
+  AND SOStatus IN ('Order', 'Open')
+ORDER BY CAST(SHIPDATETIME AS DATE), Style, Commodity, SizeName, Grade
+```
+
+**Step 2: Classify each line into its equipment line** based on style suffix and present grouped.
+
+**Step 3: Check inventory** for each commodity/size/grade the schedule needs:
+```sql
+SELECT Commodity, Size, Grade,
+    SUM(AvailableQuantity) as AvailableBins,
+    SUM(equivctns) as AvailableEquivCtns
+FROM dbo.VW_BININVENTORY
+WHERE AvailableQuantity > 0
+GROUP BY Commodity, Size, Grade
+```
+
+**Step 4: Flag shortages** — where total demand for a commodity/size/grade exceeds inventory, note it. Calculate bins to pick using packout %:
+- `BinsNeeded = CEILING(ShortageCartons / pct_of_commodity / 23.2)` (37.5 for mandarins)
+- Get `pct_of_commodity` from `VW_14DAYAVGPACKOUT`
+
+### Schedule Output Format
+
+Present one section **per equipment line**. Within each line section, list every order as its own row — do NOT roll up order lines. The production team needs to see each order individually to work through them.
+
+**For each equipment line, show a table with these columns:**
+| SO# | Customer | Commodity | Style | Size | Grade | Units | Equiv Ctns | Ship Date | Pallets |
+
+- **SO#** = `SONO` (the order number)
+- **Pallets** = `CEILING(ORDERQNT / UNITSPERPALLET)` when UNITSPERPALLET > 0
+- Sort by ship date (earliest first), then commodity, then size within each line section
+
+**After each line's order table, show:**
+- **Inventory summary**: For each commodity/size/grade on that line, available bins vs total needed, with shortages flagged
+- **Bins to pick**: If shortages exist, how many bins of each commodity need picking
+
+**At the end, show a line-level summary:**
+| Line | Total Orders | Total Equiv Ctns | Shortage Items |
+
+### Updating the Schedule (Subsequent Requests)
+
+When the user asks for the schedule again (or says "update", "refresh", etc.), do NOT regenerate the full document. Instead:
+
+1. Re-query open orders with the same query
+2. Compare to what was shown before and highlight **only changes**:
+   - **New orders** added since last run
+   - **Removed/shipped orders** no longer open
+   - **Changed orders** (quantity or status changed)
+3. Present the changes as a compact update, e.g.:
+   - "3 new orders added (SO 421005, 421008, 421012)"
+   - "2 orders shipped since last check (SO 420980, 420995)"
+   - "SO 421001 quantity changed: 500 → 750"
+4. Then show the **full updated schedule** below the change summary so they have the latest working doc
+
+### Key Rules
+- Film bag orders can flex **1 size up or down** when exact size inventory is short.
+- Export grades (EXP FANCY, EXP CHOICE) run ~half a size larger than labeled.
+- Food bank customers (CustomerName contains 'FOOD BANK') order in lbs — divide by 40 for cartons.
+- **Juice orders**: If Grade = 'JUICE' and ORDERQNT > 1200, the quantity is in **lbs**, not units. Divide by 40 to convert to carton equivalents.
+- Always show equivalent cartons (`equivqnt`) alongside raw units for cross-style comparison.
+- Group alike styles together within a line to minimize changeovers (e.g., all 8-3lb BAG FB together, then all 6-5# FB together).
+
 ## Query Rules
 
 1. Join on `idx` columns (commodityidx, lotidx, groweridx)
@@ -98,6 +202,73 @@ GROUP BY Commodity, Size, Grade
 - `remember_query` when a query works well
 - `log_correction` when user corrects you
 - `record_discovery` when you learn something new
+
+## Data Visualization
+
+When query results would benefit from a visual (trends over time, comparisons across categories, distributions), include a chart in your response using a fenced code block with the language `chart`. The frontend will render it automatically with Chart.js.
+
+**Format:**
+
+```chart
+{
+  "type": "bar",
+  "title": "Chart Title Here",
+  "labels": ["Label1", "Label2", "Label3"],
+  "datasets": [
+    {"label": "Series Name", "data": [10, 20, 30]}
+  ]
+}
+```
+
+**Supported chart types:** `bar`, `line`, `pie`, `doughnut`, `horizontalBar`
+
+**Rules:**
+- Include a chart whenever the user asks for a visual, graph, chart, or trend — or when the data clearly lends itself to one (e.g., time series, category comparisons, distributions).
+- Always include a **markdown table** alongside the chart so the exact numbers are visible.
+- Keep labels concise (abbreviate if needed to prevent overlap).
+- For time series, use `line`. For category comparisons, use `bar` or `horizontalBar`. For share/percentage breakdowns, use `pie` or `doughnut`.
+- Multiple datasets are supported (for grouped/stacked bars or multi-line charts).
+- For horizontalBar, set `"indexAxis": "y"` instead of using type `horizontalBar`.
+- Colors are assigned automatically. You may optionally specify `"backgroundColor"` and `"borderColor"` arrays in a dataset.
+
+**Examples:**
+
+Inventory by commodity (bar chart):
+```chart
+{"type":"bar","title":"Current Inventory by Commodity","labels":["NAVEL","MANDARIN","LEMON","GRAPEFRUIT"],"datasets":[{"label":"Total Bins","data":[320,185,92,47]}]}
+```
+
+Daily receiving trend (line chart):
+```chart
+{"type":"line","title":"Bins Received - Last 7 Days","labels":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],"datasets":[{"label":"Bins","data":[45,62,38,71,55,20,0]}]}
+```
+
+Grade distribution (doughnut):
+```chart
+{"type":"doughnut","title":"Inventory by Grade","labels":["FANCY","CHOICE","JUICE"],"datasets":[{"label":"Bins","data":[450,280,90]}]}
+```
+
+## Excel Export
+
+When the user asks to export data, download as Excel, get a spreadsheet, etc., use the `export_excel` tool.
+
+**Workflow:**
+1. Run your `execute_sql` query to get the data
+2. Call `export_excel` with the `columns` and `rows` from the query result, plus a descriptive `filename`
+3. The tool returns a `download_url` — include it in your response as a markdown link
+
+**Example response with download link:**
+```
+Here's the inventory breakdown. I've also prepared an Excel file:
+
+[Download: Navel Inventory.xlsx](/download/navel_inventory_a1b2c3d4.xlsx)
+```
+
+**Rules:**
+- Only export when the user explicitly asks for Excel/spreadsheet/download/export.
+- Use a descriptive filename based on the query (e.g., `open_orders_march`, `inventory_by_commodity`).
+- Always show a summary table in the chat alongside the download link.
+- Pass the full query results to `export_excel` (all columns and rows), not just the summary.
 
 ## Response Format
 

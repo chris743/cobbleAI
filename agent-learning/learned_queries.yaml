@@ -378,3 +378,122 @@ entries:
   notes: Use '%FB%' to filter film bag styles. Filter by SOStatus 'Order' or 'Open'
     for unshipped orders. Group by commodity, style, size, grade for production planning.
   verified: true
+- timestamp: '2026-03-04T20:54:52.540313'
+  question: Build a production plan for all orders shipping tomorrow
+  sql: "-- Step 1: Get all orders shipping tomorrow by equipment line\nWITH OrdersByLine\
+    \ AS (\n    SELECT \n        CASE \n            WHEN Style LIKE '%FB%' THEN 'Film\
+    \ Bag Line'\n            WHEN Style LIKE '%CB%' THEN 'Combo Bag Line'  \n    \
+    \        WHEN Style LIKE '%NB%' THEN 'Net Bag Line'\n            WHEN Style LIKE\
+    \ '%WM%' THEN 'Wicketed Mesh Line'\n            WHEN Style LIKE '%HD%' THEN 'Header\
+    \ Bag Line'\n            ELSE 'Bulk Line'\n        END as EquipmentLine,\n   \
+    \     Style, Commodity, SizeName, Grade,\n        SUM(ORDERQNT) as TotalUnits,\n\
+    \        SUM(equivqnt) as TotalEquivCtns,\n        COUNT(DISTINCT CustomerName)\
+    \ as Customers\n    FROM dbo.VW_LPSALESORDERS\n    WHERE CAST(SHIPDATETIME AS\
+    \ DATE) = CAST(GETDATE() + 1 AS DATE)\n      AND ORDERQNT > 0\n      AND SOStatus\
+    \ IN ('Order', 'Open')\n    GROUP BY Style, Commodity, SizeName, Grade\n)\nSELECT\
+    \ EquipmentLine, \n       SUM(TotalEquivCtns) as LineTotal,\n       COUNT(*) as\
+    \ SKUs\nFROM OrdersByLine\nGROUP BY EquipmentLine\nORDER BY LineTotal DESC"
+  notes: 'Pattern for production planning: classify orders by equipment line, then
+    check inventory coverage for each commodity/size/grade combination needed'
+  verified: true
+- timestamp: '2026-03-04T21:29:49.158397'
+  question: Production schedule showing all non-reserved orders for tomorrow and pulling
+    Friday orders if capacity allows
+  sql: "SELECT SONO, CustomerName, Commodity, Style, SizeName, Grade,\n    ORDERQNT,\
+    \ equivqnt, EQUIVFACTOR, UNITSPERPALLET,\n    CAST(SHIPDATETIME AS DATE) as ShipDate,\n\
+    \    SOStatus, RESERVEQNT,\n    CASE \n        WHEN Style LIKE '%FB%' THEN 'Film\
+    \ Bag (Giro)'\n        WHEN Style LIKE '%CB%' OR Style LIKE '%WM%' THEN 'Combo/Wicketed\
+    \ Mesh (Fox)'\n        WHEN Style LIKE '%NB%' THEN 'Net Bag (Vex)'\n        WHEN\
+    \ Style LIKE '%HD%' THEN 'Header Bag'\n        ELSE 'Bulk'\n    END as EquipmentLine\n\
+    FROM dbo.VW_LPSALESORDERS\nWHERE CAST(SHIPDATETIME AS DATE) IN ('2026-03-05',\
+    \ '2026-03-06')\n  AND ORDERQNT > 0\n  AND SOStatus IN ('Order', 'Open')\n  AND\
+    \ (RESERVEQNT IS NULL OR RESERVEQNT < ORDERQNT)"
+  notes: "Shows all non-reserved orders for production scheduling. Groups by equipment\
+    \ line using style codes: FB=Film Bag, CB/WM=Combo/Wicketed Mesh, NB=Net Bag,\
+    \ HD=Header Bag, others=Bulk. Food bank orders need special handling (lbs\xF7\
+    40=cartons)."
+  verified: true
+- timestamp: '2026-03-05T09:18:28.178065'
+  question: What is the average equivalent FOB price for a specific commodity/size/grade?
+  sql: "SELECT \n    SUM((FOBPrice / EQUIVFACTOR) * ORDERQNT) / NULLIF(SUM(ORDERQNT),\
+    \ 0) as Weighted_Avg_Equiv_FOB,\n    SUM(ORDERQNT) as Total_Units_Sold,\n    COUNT(DISTINCT\
+    \ CustomerName) as Number_of_Customers,\n    MIN(FOBPrice / EQUIVFACTOR) as Min_Equiv_FOB,\n\
+    \    MAX(FOBPrice / EQUIVFACTOR) as Max_Equiv_FOB\nFROM dbo.VW_LPSALESORDERS\n\
+    WHERE Commodity = 'NAVEL'\n  AND SizeName = '072'\n  AND Grade = 'FANCY'\n  AND\
+    \ FOBPrice > 0\n  AND equivqnt > 0\n  AND EQUIVFACTOR > 0\n  AND CAST(SHIPDATETIME\
+    \ AS DATE) >= DATEADD(day, -30, GETDATE())"
+  notes: Use FOBPrice / EQUIVFACTOR to normalize pricing across different pack styles.
+    Weight by ORDERQNT for accurate volume-weighted average. Always filter FOBPrice
+    > 0 and EQUIVFACTOR > 0.
+  verified: true
+- timestamp: '2026-03-05T09:24:44.159521'
+  question: break down estimated remaining bins by commodity from blocks
+  sql: "WITH block_estimates AS (\n    SELECT \n        c.Commodity as CommodityName,\n\
+    \        b.GrowerName,\n        b.ID as BlockID,\n        b.NAME as BlockName,\n\
+    \        b.ACRES,\n        ISNULL(b.ESTIMATEDBINS, 0) as EstimatedBins\n    FROM\
+    \ dbo.VW_BLOCKS b\n    LEFT JOIN dbo.VW_CF_COMMODITIES c ON b.CMTYIDX = c.CommodityIDx\n\
+    \    WHERE b.INACTIVEFLAG = 'N'\n        AND b.ESTIMATEDBINS > 0\n),\nbins_received\
+    \ AS (\n    SELECT \n        br.Commodity as CommodityName,\n        bl.GrowerName,\n\
+    \        bl.ID as BlockID,\n        SUM(ISNULL(br.RecvQnt, 0)) as BinsReceived\n\
+    \    FROM dbo.VW_BINSRECEIVED br\n    JOIN dbo.VW_BLOCKS bl ON br.GablockIdx =\
+    \ bl.GABLOCKIDX\n    GROUP BY br.Commodity, bl.GrowerName, bl.ID\n),\ncombined\
+    \ AS (\n    SELECT \n        be.CommodityName,\n        be.GrowerName,\n     \
+    \   be.BlockID,\n        be.BlockName,\n        be.ACRES,\n        be.EstimatedBins,\n\
+    \        ISNULL(br.BinsReceived, 0) as BinsReceived,\n        be.EstimatedBins\
+    \ - ISNULL(br.BinsReceived, 0) as RemainingBins\n    FROM block_estimates be\n\
+    \    LEFT JOIN bins_received br ON be.CommodityName = br.CommodityName \n    \
+    \    AND be.GrowerName = br.GrowerName \n        AND be.BlockID = br.BlockID\n\
+    )\nSELECT \n    CommodityName,\n    COUNT(*) as BlockCount,\n    SUM(ACRES) as\
+    \ TotalAcres,\n    SUM(EstimatedBins) as TotalEstimatedBins,\n    SUM(BinsReceived)\
+    \ as TotalBinsReceived,\n    SUM(RemainingBins) as TotalRemainingBins,\n    ROUND(\n\
+    \        CASE \n            WHEN SUM(EstimatedBins) > 0 \n            THEN (SUM(BinsReceived)\
+    \ * 100.0 / SUM(EstimatedBins))\n            ELSE 0 \n        END, 1\n    ) as\
+    \ PercentHarvested\nFROM combined\nGROUP BY CommodityName\nHAVING SUM(EstimatedBins)\
+    \ > 0\nORDER BY TotalRemainingBins DESC"
+  notes: Compares block estimates (VW_BLOCKS) vs actual receiving (VW_BINSRECEIVED)
+    to calculate remaining bins by commodity. Uses Cobblestone CF tables only.
+  verified: true
+- timestamp: '2026-03-05T09:33:23.956239'
+  question: How many bins need to be picked by commodity to meet open orders?
+  sql: "WITH demand AS (\n    SELECT \n        Commodity,\n        SizeName as Size,\n\
+    \        Grade,\n        SUM(equivqnt) as DemandCartons\n    FROM dbo.VW_LPSALESORDERS\n\
+    \    WHERE CAST(SHIPDATETIME AS DATE) >= CAST(GETDATE() AS DATE)\n      AND SOStatus\
+    \ IN ('Order', 'Open')\n      AND ORDERQNT > 0\n      AND Commodity IS NOT NULL\n\
+    \    GROUP BY Commodity, SizeName, Grade\n),\ninventory AS (\n    SELECT \n  \
+    \      Commodity,\n        Size,\n        Grade,\n        SUM(AvailableQuantity)\
+    \ as AvailableBins,\n        SUM(equivctns) as AvailableCartons\n    FROM dbo.VW_BININVENTORY\n\
+    \    WHERE AvailableQuantity > 0\n    GROUP BY Commodity, Size, Grade\n),\npackout\
+    \ AS (\n    SELECT \n        Commodity,\n        SizeName as Size,\n        Grade,\n\
+    \        pct_of_commodity as PackoutPct\n    FROM dbo.VW_14DAYAVGPACKOUT\n   \
+    \ WHERE pct_of_commodity > 0\n),\nshortfalls AS (\n    SELECT \n        d.Commodity,\n\
+    \        d.Size,\n        d.Grade,\n        d.DemandCartons,\n        COALESCE(i.AvailableCartons,\
+    \ 0) as AvailableCartons,\n        d.DemandCartons - COALESCE(i.AvailableCartons,\
+    \ 0) as ShortageCartons,\n        COALESCE(p.PackoutPct, 0.03) as PackoutPct\n\
+    \    FROM demand d\n    LEFT JOIN inventory i ON d.Commodity = i.Commodity \n\
+    \                          AND d.Size = i.Size \n                          AND\
+    \ d.Grade = i.Grade\n    LEFT JOIN packout p ON d.Commodity = p.Commodity \n \
+    \                       AND d.Size = p.Size \n                        AND d.Grade\
+    \ = p.Grade\n    WHERE d.DemandCartons - COALESCE(i.AvailableCartons, 0) > 0\n\
+    )\nSELECT \n    Commodity,\n    SUM(ShortageCartons) as TotalShortageCartons,\n\
+    \    SUM(CASE WHEN Commodity = 'MANDARIN' THEN \n        CEILING(ShortageCartons\
+    \ / PackoutPct / 37.5)\n        ELSE \n        CEILING(ShortageCartons / PackoutPct\
+    \ / 23.2)\n        END) as BinsNeededToPick\nFROM shortfalls\nWHERE PackoutPct\
+    \ > 0\nGROUP BY Commodity\nORDER BY BinsNeededToPick DESC"
+  notes: Calculates bins needed to pick by comparing open order demand against available
+    inventory, accounting for packout percentages and commodity-specific bin conversion
+    rates (37.5 for mandarins, 23.2 for others)
+  verified: false
+- timestamp: '2026-03-05T09:34:15.451444'
+  question: What is the average NAVEL packout by size and grade?
+  sql: "SELECT \n    SizeName,\n    Grade,\n    qnt as Cartons,\n    ROUND(pct_of_commodity\
+    \ * 100, 2) as PackoutPercent\nFROM dbo.VW_14DAYAVGPACKOUT\nWHERE Commodity =\
+    \ 'NAVEL'\n  AND pct_of_commodity > 0\nORDER BY Grade, \n    CASE \n        WHEN\
+    \ SizeName = '032' THEN 1\n        WHEN SizeName = '036' THEN 2\n        WHEN\
+    \ SizeName = '040' THEN 3\n        WHEN SizeName = '048' THEN 4\n        WHEN\
+    \ SizeName = '056' THEN 5\n        WHEN SizeName = '072' THEN 6\n        WHEN\
+    \ SizeName = '088' THEN 7\n        WHEN SizeName = '113' THEN 8\n        WHEN\
+    \ SizeName = '138' THEN 9\n        WHEN SizeName = '163' THEN 10\n        ELSE\
+    \ 99\n    END"
+  notes: Shows 14-day rolling average packout percentages for NAVEL oranges by size
+    and grade. Remember to multiply pct_of_commodity by 100 for display.
+  verified: false

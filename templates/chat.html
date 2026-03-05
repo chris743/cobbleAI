@@ -138,6 +138,52 @@
 
         .message.agent strong { font-weight: 600; }
 
+        /* Chart container */
+        .chart-container {
+            position: relative;
+            margin: 12px 0;
+            padding: 12px;
+            background: #fafafa;
+            border-radius: 8px;
+            border: 1px solid #e8e8e8;
+            max-width: 600px;
+        }
+
+        .chart-container canvas {
+            max-height: 350px;
+        }
+
+        .chart-title {
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        /* Download link styling */
+        .message.agent a[href^="/download/"] {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #1a1a2e;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            margin: 8px 0;
+        }
+
+        .message.agent a[href^="/download/"]:hover {
+            background: #2a2a4e;
+        }
+
+        .message.agent a[href^="/download/"]::before {
+            content: "\2B07";
+        }
+
         /* Thinking indicator */
         .thinking {
             align-self: flex-start;
@@ -225,6 +271,8 @@
 
     <!-- Markdown parser (lightweight, no build step) -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Chart.js for data visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script>
         const chatContainer = document.getElementById('chat-container');
         const userInput = document.getElementById('user-input');
@@ -241,11 +289,90 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
+        const CHART_PALETTE = [
+            'rgba(54, 162, 235, 0.7)',
+            'rgba(255, 99, 132, 0.7)',
+            'rgba(75, 192, 192, 0.7)',
+            'rgba(255, 206, 86, 0.7)',
+            'rgba(153, 102, 255, 0.7)',
+            'rgba(255, 159, 64, 0.7)',
+            'rgba(99, 255, 132, 0.7)',
+            'rgba(201, 203, 207, 0.7)'
+        ];
+        const CHART_BORDERS = CHART_PALETTE.map(c => c.replace('0.7)', '1)'));
+
+        function renderCharts(container) {
+            // Find <code class="language-chart"> blocks produced by marked
+            const codeBlocks = container.querySelectorAll('code.language-chart');
+            codeBlocks.forEach(code => {
+                const pre = code.parentElement; // <pre> wrapping the <code>
+                try {
+                    const spec = JSON.parse(code.textContent);
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'chart-container';
+
+                    if (spec.title) {
+                        const title = document.createElement('div');
+                        title.className = 'chart-title';
+                        title.textContent = spec.title;
+                        wrapper.appendChild(title);
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    wrapper.appendChild(canvas);
+                    pre.replaceWith(wrapper);
+
+                    // Build Chart.js config
+                    let chartType = spec.type === 'horizontalBar' ? 'bar' : spec.type;
+                    const datasets = (spec.datasets || []).map((ds, i) => ({
+                        label: ds.label || `Series ${i + 1}`,
+                        data: ds.data,
+                        backgroundColor: ds.backgroundColor || (
+                            ['pie', 'doughnut'].includes(chartType)
+                                ? CHART_PALETTE.slice(0, ds.data.length)
+                                : CHART_PALETTE[i % CHART_PALETTE.length]
+                        ),
+                        borderColor: ds.borderColor || (
+                            ['pie', 'doughnut'].includes(chartType)
+                                ? CHART_BORDERS.slice(0, ds.data.length)
+                                : CHART_BORDERS[i % CHART_BORDERS.length]
+                        ),
+                        borderWidth: ds.borderWidth || (['line'].includes(chartType) ? 2 : 1),
+                        tension: chartType === 'line' ? 0.3 : undefined,
+                        fill: chartType === 'line' ? false : undefined
+                    }));
+
+                    const indexAxis = spec.indexAxis || (spec.type === 'horizontalBar' ? 'y' : undefined);
+
+                    new Chart(canvas, {
+                        type: chartType,
+                        data: { labels: spec.labels || [], datasets },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            indexAxis: indexAxis,
+                            plugins: {
+                                legend: { display: datasets.length > 1 || ['pie','doughnut'].includes(chartType) },
+                                title: { display: false }
+                            },
+                            scales: ['pie','doughnut'].includes(chartType) ? {} : {
+                                y: { beginAtZero: true }
+                            }
+                        }
+                    });
+                } catch (e) {
+                    // If JSON parse fails, leave the code block as-is
+                    console.warn('Chart render failed:', e);
+                }
+            });
+        }
+
         function addMessage(text, role) {
             const div = document.createElement('div');
             div.className = `message ${role}`;
             if (role === 'agent') {
                 div.innerHTML = marked.parse(text);
+                renderCharts(div);
             } else {
                 div.textContent = text;
             }

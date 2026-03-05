@@ -9,9 +9,15 @@ Usage:
     Open http://localhost:5000
 """
 
+import os
 import uuid
 import logging
-from flask import Flask, render_template, request, jsonify
+from dotenv import load_dotenv
+
+# Load .env before importing agent (which initializes the Anthropic client at import time)
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
+from flask import Flask, render_template, request, jsonify, send_from_directory, abort
 from agent_claude import run_agent_turn
 
 app = Flask(__name__)
@@ -59,6 +65,20 @@ def chat():
 @app.route("/new", methods=["POST"])
 def new_conversation():
     return jsonify({"conversation_id": str(uuid.uuid4())})
+
+
+EXPORTS_DIR = os.path.join(os.path.dirname(__file__), "exports")
+
+
+@app.route("/download/<filename>")
+def download_file(filename):
+    # Only allow .xlsx files and block path traversal
+    if not filename.endswith(".xlsx") or "/" in filename or "\\" in filename:
+        abort(404)
+    return send_from_directory(
+        EXPORTS_DIR, filename, as_attachment=True,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 
 if __name__ == "__main__":
