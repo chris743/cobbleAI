@@ -1,0 +1,31 @@
+domain: packout
+description: |
+  Packout reports showing size and grade distribution of processed fruit.
+  Packout data tells growers what percentage of their fruit ended up in each size/grade bucket.
+
+  Based on a rolling 14-day average of packing line output.
+  This is Cobblestone system data (CF commodity indexes).
+
+views:
+- name: dbo.VW_14DAYAVGPACKOUT
+  system: Cobblestone
+  description: "14-day rolling average packout by commodity/size/grade. Base view."
+  use_for:
+    - Packout percentages by size and grade
+    - Grower packout reporting
+
+- name: dbo.VW_14DAYAVGPACKOUT_EXT
+  system: Cobblestone
+  description: "Extended packout with product details, total bins, and pro-rata bulk bin allocation."
+  use_for:
+    - Packout with product-level detail
+    - Bin-level packout allocation
+
+key_concepts:
+  - name: Packout Percentage
+    description: |
+      pct_of_commodity = qnt / commodity_total
+      Shows what fraction of a commodity's total output falls into each size/grade bucket.
+      Critical for growers to understand their crop quality.
+
+common_joins: []

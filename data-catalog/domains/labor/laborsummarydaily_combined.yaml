@@ -1,0 +1,388 @@
+# Schema documentation for rpt.vw_LaborSummaryDaily_Combined
+# Combined daily labor summary from UKG workforce management system
+
+name: rpt.vw_LaborSummaryDaily_Combined
+short_name: vw_LaborSummaryDaily_Combined
+schema: rpt
+domain: labor
+system: UKG
+
+description: |
+  Daily labor summary by employee from UKG (Ultimate Kronos Group) workforce management.
+  Each row = one employee's labor record for one day.
+
+  Contains both original text columns and parsed numeric (_num suffix) columns.
+  ALWAYS use the _num columns for calculations - the text columns may have formatting issues.
+
+  Note: This view is in the inventory domain folder but is cross-domain labor data.
+  It supports labor cost analysis for warehouse/processing operations.
+
+business_purpose: |
+  - Track daily labor hours and pay by employee, department, and job title
+  - Calculate labor costs for warehouse and processing operations
+  - Monitor overtime and double-time for compliance and cost control
+  - Support workforce planning and productivity analysis
+  - Identify soft-deleted records for data quality auditing
+
+row_count_approx: 175801
+refresh_frequency: "Weekly - Thursdays at 8am PST from UKG"
+
+columns:
+# === EMPLOYEE IDENTIFICATION ===
+- name: Employee Id
+  type: smallint
+  nullable: false
+  description: "UKG employee ID. Unique identifier for each employee. Part of composite key with Counter Date."
+
+- name: Counter Date
+  type: date
+  nullable: false
+  description: "Work date. The calendar day this labor record covers. Part of composite key with Employee Id."
+
+- name: Employee Name
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Full employee name (e.g., 'Miguel Ochoa')."
+
+# === DEPARTMENT / ROLE ===
+- name: Cost Centers(2)
+  type: nvarchar(255)
+  nullable: true
+  description: |
+    Department/cost center assignment for this day's work.
+    Format: '[Code] - [Description]' (e.g., '55 - PROCESSING- SANGER').
+    This is the ACTUAL cost center worked, which may differ from default.
+
+- name: Payroll Job Title
+  type: nvarchar(255)
+  nullable: false
+  description: |
+    Employee's payroll job title (e.g., 'Tomra Operator - Processing PM').
+    Indicates the role/function for this labor record.
+
+- name: Default Cost Centers
+  type: nvarchar(MAX)
+  nullable: true
+  description: |
+    Employee's default/home cost center (e.g., 'TOMRA Operator').
+    This is the standing assignment, not necessarily where they worked on this day.
+
+- name: Manager 1 Name
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Direct manager name. Format: 'Name (Company) (EmployeeId)' (e.g., 'Greg Gillette (Cobblestone Fruit) (5266)')."
+
+# === HOURS (TEXT - use _num versions for calculations) ===
+- name: Regular Hours
+  type: float
+  nullable: true
+  description: "Regular hours worked. Use Regular Hours_num for calculations."
+
+- name: Daily Overtime Hours
+  type: float
+  nullable: true
+  description: "Daily overtime hours (hours over 8 in a single day). Use Daily Overtime Hours_num for calculations."
+
+- name: Double Time Hours
+  type: float
+  nullable: true
+  description: "Double time hours (per California labor law, typically after 12hrs/day). Use Double Time Hours_num for calculations."
+
+- name: Total Hours
+  type: float
+  nullable: true
+  description: "Total hours worked = Regular + Daily OT + Double Time + Weekly OT. Use Total Hours_num for calculations."
+
+- name: Weekly Overtime Hours
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Weekly overtime hours (hours over 40 in a week). TEXT field - use Weekly Overtime Hours_num."
+
+# === PAY (TEXT - use _num versions for calculations) ===
+- name: Hourly Pay
+  type: money
+  nullable: true
+  description: "Base hourly pay rate. Use Hourly Pay_num for calculations."
+
+- name: Regular Pay
+  type: money
+  nullable: true
+  description: "Regular pay amount. Use Regular Pay_num for calculations."
+
+- name: Overtime Pay
+  type: money
+  nullable: true
+  description: "Daily overtime pay (1.5x rate). Use Overtime Pay_num for calculations."
+
+- name: Double Time Pay
+  type: money
+  nullable: true
+  description: "Double time pay (2x rate). Use Double Time Pay_num for calculations."
+
+- name: Weekly Overtime Pay
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Weekly overtime pay. TEXT field with $ formatting - use Weekly Overtime Pay_num."
+
+- name: Total Pay
+  type: money
+  nullable: true
+  description: "Total pay = Regular + OT + DT + Weekly OT. Use Total Pay_num for calculations."
+
+# === SYNC / AUDIT ===
+- name: first_seen_utc
+  type: datetime2
+  nullable: false
+  description: "UTC timestamp when this record was first ingested from UKG."
+
+- name: last_seen_utc
+  type: datetime2
+  nullable: false
+  description: "UTC timestamp when this record was last seen in UKG export."
+
+- name: last_updated_utc
+  type: datetime2
+  nullable: false
+  description: "UTC timestamp when this record was last modified."
+
+# === NUMERIC COLUMNS (USE THESE FOR ALL CALCULATIONS) ===
+- name: Daily Overtime Hours_num
+  type: decimal(18,4)
+  nullable: true
+  description: "Parsed numeric daily overtime hours. USE THIS for calculations."
+
+- name: Double Time Hours_num
+  type: decimal(18,4)
+  nullable: true
+  description: "Parsed numeric double time hours. USE THIS for calculations."
+
+- name: Regular Hours_num
+  type: decimal(18,4)
+  nullable: true
+  description: "Parsed numeric regular hours. USE THIS for calculations."
+
+- name: Total Hours_num
+  type: decimal(18,4)
+  nullable: true
+  description: "Parsed numeric total hours. USE THIS for calculations."
+
+- name: Weekly Overtime Hours_num
+  type: decimal(10,2)
+  nullable: true
+  description: "Parsed numeric weekly overtime hours. USE THIS for calculations."
+
+- name: Double Time Pay_num
+  type: decimal(18,4)
+  nullable: true
+  description: "Parsed numeric double time pay. USE THIS for calculations."
+
+- name: Overtime Pay_num
+  type: decimal(18,4)
+  nullable: true
+  description: "Parsed numeric overtime pay. USE THIS for calculations."
+
+- name: Regular Pay_num
+  type: decimal(18,4)
+  nullable: true
+  description: "Parsed numeric regular pay. USE THIS for calculations."
+
+- name: Total Pay_num
+  type: decimal(18,4)
+  nullable: true
+  description: "Parsed numeric total pay. USE THIS for calculations."
+
+- name: Weekly Overtime Pay_num
+  type: decimal(12,2)
+  nullable: true
+  description: "Parsed numeric weekly overtime pay. USE THIS for calculations."
+
+- name: Hourly Pay_num
+  type: decimal(18,4)
+  nullable: true
+  description: "Parsed numeric hourly pay rate. USE THIS for calculations."
+
+# === SOFT DELETE ===
+- name: is_deleted
+  type: bit
+  nullable: true
+  description: |
+    Soft delete flag. 0/False = active record, 1/True = deleted in UKG.
+    Filter to is_deleted = 0 for current/valid labor records.
+
+- name: deleted_utc
+  type: datetime2
+  nullable: true
+  description: "UTC timestamp when the record was marked as deleted. Null for active records."
+
+relationships: []
+# Standalone labor data from UKG. No direct joins to inventory or CF/LP tables.
+# Could potentially be correlated with repack/processing data by date and cost center.
+
+common_filters:
+  - column: is_deleted
+    operation: "= 0"
+    description: "Active records only (exclude soft-deleted)"
+
+  - column: Counter Date
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days of labor"
+
+  - column: "Cost Centers(2)"
+    operation: "LIKE '%PROCESSING%'"
+    description: "Processing department labor only"
+
+sample_queries:
+  - description: "Daily labor cost summary"
+    sql: |
+      SELECT
+        [Counter Date],
+        COUNT(DISTINCT [Employee Id]) as Headcount,
+        SUM(Total Hours_num) as TotalHours,
+        SUM(Regular Hours_num) as RegularHours,
+        SUM(Daily Overtime Hours_num) as OvertimeHours,
+        SUM(Total Pay_num) as TotalPay
+      FROM rpt.vw_LaborSummaryDaily_Combined
+      WHERE is_deleted = 0
+        AND [Counter Date] >= DATEADD(day, -30, GETDATE())
+      GROUP BY [Counter Date]
+      ORDER BY [Counter Date] DESC
+
+  - description: "Labor by cost center/department"
+    sql: |
+      SELECT
+        [Cost Centers(2)] as Department,
+        COUNT(DISTINCT [Employee Id]) as Headcount,
+        SUM(Total Hours_num) as TotalHours,
+        SUM(Total Pay_num) as TotalPay,
+        SUM(Total Pay_num) / NULLIF(SUM(Total Hours_num), 0) as AvgEffectiveRate
+      FROM rpt.vw_LaborSummaryDaily_Combined
+      WHERE is_deleted = 0
+        AND [Counter Date] >= DATEADD(day, -7, GETDATE())
+      GROUP BY [Cost Centers(2)]
+      ORDER BY TotalPay DESC
+
+  - description: "Overtime analysis"
+    sql: |
+      SELECT
+        [Counter Date],
+        SUM(Regular Hours_num) as RegularHrs,
+        SUM(Daily Overtime Hours_num) as DailyOTHrs,
+        SUM(Double Time Hours_num) as DoubleTimeHrs,
+        SUM(Weekly Overtime Hours_num) as WeeklyOTHrs,
+        SUM(Overtime Pay_num) + SUM(Double Time Pay_num) + SUM(Weekly Overtime Pay_num) as TotalOTPay
+      FROM rpt.vw_LaborSummaryDaily_Combined
+      WHERE is_deleted = 0
+        AND [Counter Date] >= DATEADD(day, -30, GETDATE())
+      GROUP BY [Counter Date]
+      ORDER BY [Counter Date]
+
+notes: |
+  - ALWAYS use _num suffix columns for numeric calculations (not the text/money originals)
+  - Weekly Overtime Hours and Weekly Overtime Pay are nvarchar in original form - must use _num versions
+  - Column names contain spaces and parentheses - use [bracket] notation in SQL
+  - Composite key: [Employee Id] + [Counter Date]
+  - Filter is_deleted = 0 to exclude soft-deleted records
+  - Cost Centers(2) is the ACTUAL work location; Default Cost Centers is the home assignment
+  - This is UKG data, not CF or LP system data - no source_database column
+  - Data refreshes weekly on Thursdays at 8am PST from UKG
+
+_sample_data:
+- Employee Id: '5189'
+  Counter Date: '2025-10-01'
+  Cost Centers(2): 55 - PROCESSING- SANGER
+  Payroll Job Title: Tomra Operator - Processing PM
+  Daily Overtime Hours: '0.17'
+  Default Cost Centers: TOMRA Operator
+  Double Time Hours: '0.0'
+  Double Time Pay: '0.0000'
+  Employee Name: Miguel Ochoa
+  Hourly Pay: '25.0000'
+  Manager 1 Name: Greg Gillette (Cobblestone Fruit) (5266)
+  Overtime Pay: '7.2300'
+  Regular Hours: '8.0'
+  Regular Pay: '240.0000'
+  Total Hours: '8.17'
+  Total Pay: '247.2300'
+  Weekly Overtime Hours: '0'
+  Weekly Overtime Pay: $0.00
+  first_seen_utc: '2025-12-16 17:30:00'
+  last_seen_utc: '2025-12-16 17:41:15'
+  last_updated_utc: '2025-12-16 17:41:15'
+  Daily Overtime Hours_num: '0.1700'
+  Double Time Hours_num: '0.0000'
+  Regular Hours_num: '8.0000'
+  Total Hours_num: '8.1700'
+  Weekly Overtime Hours_num: '0.00'
+  Double Time Pay_num: '0.0000'
+  Overtime Pay_num: '7.2300'
+  Regular Pay_num: '240.0000'
+  Total Pay_num: '247.2300'
+  Weekly Overtime Pay_num: '0.00'
+  Hourly Pay_num: '25.0000'
+  is_deleted: 'False'
+- Employee Id: '5189'
+  Counter Date: '2025-10-02'
+  Cost Centers(2): 55 - PROCESSING- SANGER
+  Payroll Job Title: Tomra Operator - Processing PM
+  Daily Overtime Hours: '0.0'
+  Default Cost Centers: TOMRA Operator
+  Double Time Hours: '0.0'
+  Double Time Pay: '0.0000'
+  Employee Name: Miguel Ochoa
+  Hourly Pay: '25.0000'
+  Manager 1 Name: Greg Gillette (Cobblestone Fruit) (5266)
+  Overtime Pay: '0.0000'
+  Regular Hours: '3.18'
+  Regular Pay: '95.4000'
+  Total Hours: '3.18'
+  Total Pay: '95.4000'
+  Weekly Overtime Hours: '0'
+  Weekly Overtime Pay: $0.00
+  first_seen_utc: '2025-12-16 17:30:00'
+  last_seen_utc: '2025-12-16 17:41:15'
+  last_updated_utc: '2025-12-16 17:41:15'
+  Daily Overtime Hours_num: '0.0000'
+  Double Time Hours_num: '0.0000'
+  Regular Hours_num: '3.1800'
+  Total Hours_num: '3.1800'
+  Weekly Overtime Hours_num: '0.00'
+  Double Time Pay_num: '0.0000'
+  Overtime Pay_num: '0.0000'
+  Regular Pay_num: '95.4000'
+  Total Pay_num: '95.4000'
+  Weekly Overtime Pay_num: '0.00'
+  Hourly Pay_num: '25.0000'
+  is_deleted: 'False'
+- Employee Id: '5189'
+  Counter Date: '2025-10-03'
+  Cost Centers(2): 55 - PROCESSING- SANGER
+  Payroll Job Title: Tomra Operator - Processing PM
+  Daily Overtime Hours: '1.15'
+  Default Cost Centers: TOMRA Operator
+  Double Time Hours: '0.0'
+  Double Time Pay: '0.0000'
+  Employee Name: Miguel Ochoa
+  Hourly Pay: '25.0000'
+  Manager 1 Name: Greg Gillette (Cobblestone Fruit) (5266)
+  Overtime Pay: '48.8800'
+  Regular Hours: '8.0'
+  Regular Pay: '240.0000'
+  Total Hours: '9.15'
+  Total Pay: '288.8800'
+  Weekly Overtime Hours: '0'
+  Weekly Overtime Pay: $0.00
+  first_seen_utc: '2025-12-16 17:30:00'
+  last_seen_utc: '2025-12-16 17:41:15'
+  last_updated_utc: '2025-12-16 17:41:15'
+  Daily Overtime Hours_num: '1.1500'
+  Double Time Hours_num: '0.0000'
+  Regular Hours_num: '8.0000'
+  Total Hours_num: '9.1500'
+  Weekly Overtime Hours_num: '0.00'
+  Double Time Pay_num: '0.0000'
+  Overtime Pay_num: '48.8800'
+  Regular Pay_num: '240.0000'
+  Total Pay_num: '288.8800'
+  Weekly Overtime Pay_num: '0.00'
+  Hourly Pay_num: '25.0000'
+  is_deleted: 'False'

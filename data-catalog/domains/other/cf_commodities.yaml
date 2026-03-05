@@ -1,0 +1,78 @@
+# Schema documentation for dbo.VW_CF_COMMODITIES
+# Cobblestone commodity reference table
+
+name: dbo.VW_CF_COMMODITIES
+short_name: VW_CF_COMMODITIES
+schema: dbo
+domain: other
+system: Cobblestone
+
+description: |
+  Cobblestone (CF) commodity reference/lookup table. Small dimension table (~11 rows).
+  Use this to resolve commodity names for Cobblestone system data
+  (VW_BINSRECEIVED, VW_BLOCKS, portal views, VW_CF_POOLS).
+
+  CRITICAL: Do NOT join this to LP tables. Use VW_LP_COMMODITIES for LP data.
+
+business_purpose: |
+  - Commodity name lookup for all Cobblestone/CF system data
+  - Maps CommodityIDx to display names for grower-facing reports
+  - Provides both short commodity name and invoice-formatted name
+
+row_count_approx: 11
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: source_database
+  type: nvarchar(20)
+  nullable: false
+  description: "Always 'COBBLESTONE' for this table."
+
+- name: CommodityIDx
+  type: int
+  nullable: true
+  description: |
+    Primary key. Cobblestone commodity index.
+    Join target for CmtyIdx/CMTYIDX columns in CF tables.
+    NOT compatible with LP CommodityIDx values.
+
+- name: InvoiceCommodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Invoice/formal commodity name (e.g., 'NAVEL ORANGE', 'CARA CARA ORANGE'). Used on grower invoices and settlements."
+
+- name: Commodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Short commodity name (e.g., 'NAVEL', 'BLOOD', 'CARA CARA'). Used in most operational displays."
+
+relationships: []
+# This IS the lookup table - other CF tables join TO this.
+
+common_filters: []
+
+sample_queries:
+  - description: "List all CF commodities"
+    sql: |
+      SELECT CommodityIDx, Commodity, InvoiceCommodity
+      FROM dbo.VW_CF_COMMODITIES
+      ORDER BY CommodityIDx
+
+notes: |
+  - Only ~11 rows - this is a small lookup table
+  - CommodityIDx values are NOT the same as LP CommodityIDx values
+  - Use InvoiceCommodity for formal/grower-facing names, Commodity for short names
+
+_sample_data:
+- source_database: COBBLESTONE
+  CommodityIDx: '1'
+  InvoiceCommodity: NAVEL ORANGE
+  Commodity: NAVEL
+- source_database: COBBLESTONE
+  CommodityIDx: '2'
+  InvoiceCommodity: BLOOD ORANGE
+  Commodity: BLOOD
+- source_database: COBBLESTONE
+  CommodityIDx: '3'
+  InvoiceCommodity: CARA CARA ORANGE
+  Commodity: CARA CARA

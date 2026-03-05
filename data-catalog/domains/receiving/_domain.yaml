@@ -1,0 +1,26 @@
+domain: receiving
+description: |
+  Detailed receiving records for all inbound fruit.
+  Cobblestone system data tracking bulk bin arrivals from grower orchards.
+
+  See also the inventory domain for VW_BINSRECEIVED and portal views which
+  provide similar receiving data with different aggregation levels.
+
+views:
+- name: dbo.VW_ALLRECEIVINGS
+  system: Cobblestone
+  description: |
+    All receiving records across the current fiscal year.
+    More rows than VW_BINSRECEIVED (~12K vs ~5K) - may include additional detail records.
+  use_for:
+    - Comprehensive receiving history
+    - Fiscal year receiving analysis
+
+key_concepts:
+  - name: VW_ALLRECEIVINGS vs VW_BINSRECEIVED
+    description: |
+      VW_ALLRECEIVINGS has ~12K rows; VW_BINSRECEIVED has ~5K rows.
+      Both track bulk bin receiving from Cobblestone system.
+      VW_ALLRECEIVINGS appears to be the more comprehensive view.
+
+common_joins: []

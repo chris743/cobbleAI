@@ -1,0 +1,346 @@
+# Schema documentation for dbo.VW_BININVENTORY
+# Primary processed bin inventory table - LP system
+
+name: dbo.VW_BININVENTORY
+short_name: VW_BININVENTORY
+schema: dbo
+domain: inventory
+system: LP
+
+description: |
+  Current processed bin inventory. Each row represents one bin tag in the warehouse.
+  This is the primary table for answering "what inventory do we have right now?"
+  
+  All records are LP system data (source_database = 'LP').
+  Bins are processed (washed, waxed, graded, sized) - not bulk/field bins.
+
+business_purpose: |
+  - Real-time inventory visibility by commodity, size, grade, grower, pool
+  - Supports sales order fulfillment decisions
+  - Tracks bin positions in warehouse
+  - Links inventory back to grower/block for traceability
+
+row_count_approx: 8034
+refresh_frequency: "Real-time sync from LP system (see SyncDateTime)"
+
+columns:
+  # === SYSTEM / SYNC ===
+  - name: source_database
+    type: nvarchar(20)
+    nullable: false
+    description: "Always 'LP' for this view. Used for system identification."
+
+  - name: SyncStatus
+    type: nvarchar(1)
+    nullable: true
+    description: "Sync status flag. 'E' = synced/exported."
+
+  - name: SyncDateTime
+    type: datetime
+    nullable: true
+    description: "Last sync timestamp from source system."
+
+  # === BIN IDENTIFICATION ===
+  - name: TagNumber
+    type: nvarchar(50)
+    nullable: true
+    description: "Unique bin tag ID. Physical label on the bin. Primary identifier for a specific bin."
+
+  - name: Warehouse
+    type: nvarchar(40)
+    nullable: true
+    description: "Warehouse location name (e.g., 'COBBLESTONE SANGER')."
+
+  - name: WhsPositionIDx
+    type: int
+    nullable: true
+    description: "Warehouse position index. Specific location within warehouse."
+
+  # === PRODUCT ATTRIBUTES ===
+  - name: ProductIDx
+    type: int
+    nullable: true
+    description: "Product index. Join to VW_PRODUCTS on productidx for full product details."
+
+  - name: ProductID
+    type: nvarchar(50)
+    nullable: true
+    description: "Product ID code (denormalized from product master)."
+
+  - name: ProductDescription
+    type: nvarchar(255)
+    nullable: true
+    description: "Full product description string. Contains commodity, style, grade, size, label info."
+
+  - name: ProductType
+    type: nvarchar(1)
+    nullable: true
+    description: "Product type code. '2' = bin product."
+
+  - name: CommodityIDX
+    type: int
+    nullable: true
+    description: "LP commodity index. Join to VW_LP_COMMODITIES on commodityidx."
+
+  - name: Commodity
+    type: nvarchar(50)
+    nullable: true
+    description: "Commodity name (e.g., 'LEMON', 'MANDARIN', 'NAVEL'). Denormalized."
+
+  - name: Variety
+    type: nvarchar(50)
+    nullable: true
+    description: "Variety within commodity (e.g., 'TANGO' for mandarins). May be null."
+
+  - name: Style
+    type: nvarchar(50)
+    nullable: true
+    description: "Pack style. For inventory bins, typically 'BIN'."
+
+  - name: Grade
+    type: nvarchar(50)
+    nullable: true
+    description: |
+      Quality grade (e.g., 'FANCY', 'CHOICE', 'EXP FANCY', 'EXP CHOICE').
+      EXP grades = export quality with special coatings, runs ~half size larger.
+
+  - name: Size
+    type: nvarchar(50)
+    nullable: true
+    description: |
+      Fruit size code. Count per standard carton (smaller number = larger fruit).
+      Stored as zero-padded 3-digit string (e.g., '088' not '88'). Always pad user input to 3 digits.
+      For mandarins: multiply by 5 to get count per 25lb standard carton.
+      Examples: '165' (lemons), '021' (mandarins = 105 per 25lb).
+
+  - name: UnitOfMeasure
+    type: nvarchar(50)
+    nullable: true
+    description: "Unit of measure code. always ctn"
+
+  - name: Label
+    type: nvarchar(50)
+    nullable: true
+    description: "Label/PLU code (e.g., 'PLU 4958(140/165'). Branding/sticker info."
+
+  - name: Method
+    type: nvarchar(50)
+    nullable: true
+    description: "Packing method. 'BIN' for bin inventory."
+
+  - name: Region
+    type: nvarchar(50)
+    nullable: true
+    description: "Origin region (e.g., 'USA - CA')."
+
+  - name: Storage
+    type: nvarchar(50)
+    nullable: true
+    description: "Storage location code (e.g., 'COBBLE SANGER')."
+
+  - name: Color
+    type: nvarchar(50)
+    nullable: true
+    description: "Color attribute. Often 'BIN' for bin inventory."
+
+  # === QUANTITIES ===
+  - name: ReceivedQuantitiy
+    type: float
+    nullable: true
+    description: "Original quantity received into this bin tag. Usually 1.0 for whole bins."
+    note: "Typo in column name is from source system."
+
+  - name: IssuedQuantity
+    type: float
+    nullable: true
+    description: "Quantity issued/consumed from this bin (e.g., for repacking)."
+
+  - name: AvailableQuantity
+    type: float
+    nullable: true
+    description: |
+      Current available quantity. This is the key inventory field.
+      AvailableQuantity = ReceivedQuantitiy - IssuedQuantity.
+      Can be fractional if bin is partially consumed (e.g., 0.6 = 60% remaining).
+
+  - name: equivctns
+    type: float
+    nullable: true
+    description: |
+      Carton equivalent for this bin's available quantity.
+      For full bin: 23.2 ctns (citrus) or 37.5 ctns (mandarins at 25lb std).
+      Scales with AvailableQuantity (e.g., 0.6 bins = ~22.5 equivctns for mandarin).
+      USE THIS for carton-based reporting.
+
+  - name: ReceiveDate
+    type: datetime2
+    nullable: true
+    description: "Date bin was received into LP inventory (after packing entry)."
+
+  # === GROWER / BLOCK TRACEABILITY ===
+  - name: LotIDx
+    type: int
+    nullable: true
+    description: |
+      Lot/Pool index. For domestic fruit, this contains the POOL ID.
+      Join to VW_LP_LOTS on lotidx.
+      To get the pool code string (e.g., 'C26NG01'), use the GALOTIDX column in VW_LP_LOTS.
+      GA prefix = Grower Accounting field.
+
+  - name: BlockIDx
+    type: int
+    nullable: true
+    description: "Block index. Links to grower's orchard block. Join to VW_BLOCKS on blockidx."
+
+  - name: BlockName
+    type: nvarchar(40)
+    nullable: true
+    description: "Block name (denormalized). Format: 'GrowerName--BlockDescription'."
+
+  - name: BLOCKTYPE
+    type: char(1)
+    nullable: true
+    description: "Block type code. '2' = standard grower block."
+
+  - name: GrowerID
+    type: nvarchar(6)
+    nullable: true
+    description: "Grower ID code (denormalized from block/grower master)."
+
+  - name: GrowerName
+    type: nvarchar(40)
+    nullable: true
+    description: "Grower name (denormalized)."
+
+  - name: BlockCommodityName
+    type: varchar(100)
+    nullable: true
+    description: "Commodity name from block master (what the block grows)."
+
+  - name: BlockVarietyName
+    type: varchar(100)
+    nullable: true
+    description: "Variety name from block master. May differ from bin variety if regraded."
+
+  # === CROSS-SYSTEM REFERENCE ===
+  - name: CFCommodityIDX
+    type: int
+    nullable: true
+    description: |
+      Cobblestone commodity index. Use this to join to VW_CF_COMMODITIES.
+      This bridges LP inventory back to CF grower accounting.
+
+relationships:
+  - target: dbo.VW_LP_COMMODITIES
+    join_column: CommodityIDX
+    target_column: commodityidx
+    cardinality: many-to-one
+    note: "Primary commodity join for LP data"
+
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CFCommodityIDX
+    target_column: commodityidx
+    cardinality: many-to-one
+    note: "Cross-system join to Cobblestone commodity for grower accounting"
+
+  - target: dbo.VW_LP_LOTS
+    join_column: LotIDx
+    target_column: lotidx
+    cardinality: many-to-one
+    note: "Lot/Pool details - lotidx usually contains pool values"
+
+  - target: dbo.VW_BLOCKS
+    join_column: BlockIDx
+    target_column: blockidx
+    cardinality: many-to-one
+    note: "Orchard block traceability"
+
+  - target: dbo.VW_PRODUCTS
+    join_column: ProductIDx
+    target_column: productidx
+    cardinality: many-to-one
+    note: "Full product master details"
+
+common_filters:
+  - column: AvailableQuantity
+    operation: "> 0"
+    description: "Active inventory only (exclude fully consumed bins)"
+
+  - column: Commodity
+    operation: "= 'NAVEL'"
+    description: "Filter to specific commodity"
+
+  - column: Grade
+    operation: "IN ('FANCY', 'EXP FANCY')"
+    description: "Filter to fancy grades"
+
+  - column: ReceiveDate
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Recent inventory (last 30 days)"
+
+sample_queries:
+  - description: "Current inventory by commodity, size, grade"
+    sql: |
+      SELECT 
+        Commodity,
+        Size,
+        Grade,
+        SUM(AvailableQuantity) as TotalBins,
+        SUM(equivctns) as TotalCartonEquiv
+      FROM dbo.VW_BININVENTORY
+      WHERE AvailableQuantity > 0
+      GROUP BY Commodity, Size, Grade
+      ORDER BY Commodity, Size, Grade
+
+  - description: "Inventory by grower"
+    sql: |
+      SELECT 
+        GrowerName,
+        Commodity,
+        SUM(AvailableQuantity) as TotalBins,
+        SUM(equivctns) as TotalCartonEquiv
+      FROM dbo.VW_BININVENTORY
+      WHERE AvailableQuantity > 0
+      GROUP BY GrowerName, Commodity
+      ORDER BY GrowerName, Commodity
+
+  - description: "Inventory by pool (using lotidx)"
+    sql: |
+      SELECT 
+        l.GALOTIDX as PoolCode,
+        i.Commodity,
+        SUM(i.AvailableQuantity) as TotalBins,
+        SUM(i.equivctns) as TotalCartonEquiv
+      FROM dbo.VW_BININVENTORY i
+      JOIN dbo.VW_LP_LOTS l ON i.LotIDx = l.lotidx
+      WHERE i.AvailableQuantity > 0
+      GROUP BY l.GALOTIDX, i.Commodity
+
+  - description: "Find specific bin by tag number"
+    sql: |
+      SELECT * 
+      FROM dbo.VW_BININVENTORY 
+      WHERE TagNumber = '10558796'
+
+  - description: "Aged inventory (received more than 30 days ago)"
+    sql: |
+      SELECT 
+        TagNumber,
+        Commodity,
+        Grade,
+        Size,
+        ReceiveDate,
+        DATEDIFF(day, ReceiveDate, GETDATE()) as DaysInInventory,
+        AvailableQuantity
+      FROM dbo.VW_BININVENTORY
+      WHERE AvailableQuantity > 0
+        AND ReceiveDate < DATEADD(day, -30, GETDATE())
+      ORDER BY ReceiveDate
+
+notes: |
+  - This view is already heavily denormalized - most queries don't need joins
+  - GrowerName, BlockName, Commodity, Grade, Size are all denormalized for convenience
+  - Use CFCommodityIDX (not CommodityIDX) when joining to Cobblestone tables
+  - equivctns already accounts for partial bins - use it for carton reporting
+  - Mandarin equivctns uses 25lb standard (37.5 ctns/bin) vs 40lb for other citrus (23.2 ctns/bin)
+  - Column name "ReceivedQuantitiy" has typo - this is from source system

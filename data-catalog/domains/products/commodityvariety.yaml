@@ -1,0 +1,169 @@
+# Schema documentation for Ref.vw_CommodityVariety
+# Commodity-to-variety mapping reference table
+
+name: Ref.vw_CommodityVariety
+short_name: vw_CommodityVariety
+schema: Ref
+domain: products
+system: Cobblestone
+
+description: |
+  Commodity-to-variety reference/mapping table. Lists all varieties within each commodity.
+  Source is Cobblestone system. Each row = one variety under one commodity.
+
+  Use this to resolve VARIETYIDX values in blocks and other tables to variety names.
+
+business_purpose: |
+  - Reference lookup for variety names by commodity
+  - Map CMTYIDX + VARIETYIDX to human-readable names
+  - Support grower block descriptions (what variety is planted)
+  - Track active vs inactive commodity/variety combinations
+
+row_count_approx: 130
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: CMTYIDX
+  type: int
+  nullable: false
+  description: "Cobblestone commodity index. Part of composite key with VARIETYIDX."
+
+- name: CommodityName
+  type: varchar(100)
+  nullable: true
+  description: "Short commodity name (e.g., 'NAVEL'). Matches VW_CF_COMMODITIES.Commodity."
+
+- name: CommodityNameInvC
+  type: varchar(100)
+  nullable: true
+  description: "Invoice commodity name (e.g., 'NAVEL ORANGE'). Matches VW_CF_COMMODITIES.InvoiceCommodity."
+
+- name: CommodityInactiveFlag
+  type: bit
+  nullable: true
+  description: "0 = active commodity, 1 = inactive/discontinued commodity."
+
+- name: VARIETYIDX
+  type: int
+  nullable: false
+  description: "Variety index. Part of composite key with CMTYIDX. Join target for VARIETYIDX columns."
+
+- name: VarietyName
+  type: varchar(100)
+  nullable: true
+  description: "Short variety name (e.g., 'ATWOOD', 'AUTUMN GOLD', 'FUKUMOTO', 'TANGO')."
+
+- name: VarietyNameInvC
+  type: varchar(100)
+  nullable: true
+  description: "Invoice variety name. Usually matches VarietyName."
+
+- name: VARIETYGROUPIDX
+  type: int
+  nullable: true
+  description: "Variety group index. Groups related varieties together for reporting."
+
+- name: PRODUCTGROUPTWOIDX
+  type: int
+  nullable: true
+  description: "Secondary product group index. Additional grouping classification."
+
+- name: VarietyInactiveFlag
+  type: bit
+  nullable: true
+  description: "0 = active variety, 1 = inactive/discontinued variety."
+
+- name: source_database
+  type: varchar(50)
+  nullable: false
+  description: "Always 'COBBLESTONE' for this table."
+
+- name: etl_insert_datetime
+  type: datetime
+  nullable: true
+  description: "ETL pipeline insert timestamp. When this record was loaded into the data warehouse."
+
+- name: LoadDtm
+  type: datetime2
+  nullable: false
+  description: "Load datetime. When this record was last refreshed/loaded."
+
+relationships:
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CMTYIDX
+    target_column: CommodityIDx
+    cardinality: many-to-one
+    note: "Commodity master lookup"
+
+common_filters:
+  - column: CommodityInactiveFlag
+    operation: "= 0"
+    description: "Active commodities only"
+
+  - column: VarietyInactiveFlag
+    operation: "= 0"
+    description: "Active varieties only"
+
+  - column: CommodityName
+    operation: "= 'NAVEL'"
+    description: "Filter to specific commodity"
+
+sample_queries:
+  - description: "All active varieties by commodity"
+    sql: |
+      SELECT CommodityName, VARIETYIDX, VarietyName
+      FROM Ref.vw_CommodityVariety
+      WHERE CommodityInactiveFlag = 0
+        AND VarietyInactiveFlag = 0
+      ORDER BY CommodityName, VarietyName
+
+  - description: "Lookup variety name by idx"
+    sql: |
+      SELECT CommodityName, VarietyName
+      FROM Ref.vw_CommodityVariety
+      WHERE CMTYIDX = 1 AND VARIETYIDX = 7
+
+notes: |
+  - Composite key: CMTYIDX + VARIETYIDX
+  - This is Cobblestone system data (CF commodity/variety definitions)
+  - ~130 rows = all commodity/variety combinations
+  - InvC suffix = invoice/formal display name
+  - VARIETYGROUPIDX groups similar varieties (e.g., all early navels together)
+
+_sample_data:
+- CMTYIDX: '1'
+  CommodityName: NAVEL
+  CommodityNameInvC: NAVEL ORANGE
+  CommodityInactiveFlag: 'False'
+  VARIETYIDX: '1'
+  VarietyName: ATWOOD
+  VarietyNameInvC: ATWOOD
+  VARIETYGROUPIDX: '6'
+  VarietyInactiveFlag: 'False'
+  source_database: COBBLESTONE
+  etl_insert_datetime: '2026-03-03 15:51:28.427000'
+  LoadDtm: '2026-03-03 16:00:03'
+- CMTYIDX: '1'
+  CommodityName: NAVEL
+  CommodityNameInvC: NAVEL ORANGE
+  CommodityInactiveFlag: 'False'
+  VARIETYIDX: '2'
+  VarietyName: AUTUMN GOLD
+  VarietyNameInvC: AUTUMN GOLD
+  VARIETYGROUPIDX: '5'
+  VarietyInactiveFlag: 'False'
+  source_database: COBBLESTONE
+  etl_insert_datetime: '2026-03-03 15:51:28.427000'
+  LoadDtm: '2026-03-03 16:00:03'
+- CMTYIDX: '1'
+  CommodityName: NAVEL
+  CommodityNameInvC: NAVEL ORANGE
+  CommodityInactiveFlag: 'False'
+  VARIETYIDX: '3'
+  VarietyName: BARNFIELD
+  VarietyNameInvC: BARNFIELD
+  VARIETYGROUPIDX: '5'
+  VarietyInactiveFlag: 'False'
+  source_database: COBBLESTONE
+  etl_insert_datetime: '2026-03-03 15:51:28.427000'
+  LoadDtm: '2026-03-03 16:00:03'

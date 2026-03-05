@@ -1,0 +1,235 @@
+# Schema documentation for dbo.VW_BLOCKS
+# Orchard block master data - Cobblestone system
+
+name: dbo.VW_BLOCKS
+short_name: VW_BLOCKS
+schema: dbo
+domain: inventory
+system: Cobblestone
+
+description: |
+  Orchard block master data. Each row represents a specific section of a grower's orchard.
+  Blocks are the finest level of traceability for fruit origin.
+
+  This is Cobblestone (CF) system data. Blocks link growers to their orchards,
+  commodities, varieties, acreage, and estimated production.
+
+business_purpose: |
+  - Master reference for all orchard blocks managed by the packhouse
+  - Track grower orchard details (commodity, variety, acreage)
+  - Provide estimated bin production for season planning
+  - Enable traceability from receiving tickets back to specific orchard sections
+  - Support grower performance analysis (actual vs estimated production)
+
+row_count_approx: 1097
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: GABLOCKIDX
+  type: int
+  nullable: false
+  description: |
+    Primary key. Grower Accounting block index.
+    Use this to join from VW_BINSRECEIVED (GablockIdx) and portal views.
+
+- name: ID
+  type: nvarchar(12)
+  nullable: true
+  description: |
+    Block ID string (e.g., '2012001').
+    Format appears to be: [GrowerID][BlockSequence] (e.g., grower 2012, block 001).
+
+- name: NAME
+  type: nvarchar(40)
+  nullable: true
+  description: |
+    Block name. Format: 'GROWER_NAME - BLOCK_DESCRIPTION'.
+    Examples: '5 GEN - BLK 01 AUT GLD', 'ARLIS VALENTINE - FUK'.
+    Description often contains commodity/variety abbreviations.
+
+- name: GROWERNAMEIDX
+  type: int
+  nullable: true
+  description: "Grower name index. Foreign key to grower master data."
+
+- name: GrowerName
+  type: nvarchar(40)
+  nullable: true
+  description: "Grower name (denormalized). e.g., '5 GEN CITRUS LLC'."
+
+- name: GrowerID
+  type: nvarchar(6)
+  nullable: true
+  description: "Grower ID code (e.g., '2012'). Matches GrowerID in portal views and VW_BINSRECEIVED."
+
+- name: GACLASSIDX
+  type: int
+  nullable: true
+  description: "ignore" # TODO: Confirm - Grower Accounting class index. Likely a grower classification/category.
+
+- name: CMTYIDX
+  type: int
+  nullable: true
+  description: |
+    Cobblestone commodity index. The primary commodity planted in this block.
+    Join to VW_CF_COMMODITIES on commodityidx.
+    CRITICAL: This is a CF idx - do NOT join to VW_LP_COMMODITIES.
+
+- name: VARIETYIDX
+  type: int
+  nullable: true
+  description: |
+    Variety index. The specific cultivar planted in this block.
+    Join to Ref.vw_CommodityVariety on varietyidx for variety name.
+
+- name: ACRES
+  type: float
+  nullable: true
+  description: "Acreage of the block. Physical size of the orchard section."
+
+- name: INACTIVEFLAG
+  type: char(1)
+  nullable: true
+  description: |
+    Block active/inactive status.
+    'N' = active block (currently producing/managed).
+    'Y' = inactive block (no longer producing or removed from management).
+
+- name: ESTIMATEDBINS
+  type: numeric(10,2)
+  nullable: true
+  description: |
+    Estimated bins for the current crop year/season.
+    Used for season planning, comparing actual receiving vs estimates.
+    Null or 0 if no estimate has been set.
+
+- name: DISTRICT
+  type: nvarchar(65)
+  nullable: true
+  description: |
+    California citrus growing district. If null, assume district 1 (Central Valley).
+    Values:
+    - 1 = Central Valley
+    - 2 = Coastal
+    - 3 = Southern Desert
+
+- name: CROPYEARDESCR
+  type: nvarchar(50)
+  nullable: true
+  description: "Crop year in yyyy format. Normally null since grower contracts are perpetual."
+
+relationships:
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CMTYIDX
+    target_column: commodityidx
+    cardinality: many-to-one
+    note: "CF commodity for this block. Do NOT use VW_LP_COMMODITIES."
+
+  - target: Ref.vw_CommodityVariety
+    join_column: VARIETYIDX
+    target_column: varietyidx
+    cardinality: many-to-one
+    note: "Variety planted in this block"
+
+common_filters:
+  - column: INACTIVEFLAG
+    operation: "= 'N'"
+    description: "Active blocks only"
+
+  - column: ESTIMATEDBINS
+    operation: "> 0"
+    description: "Blocks with production estimates"
+
+  - column: GrowerID
+    operation: "= '2012'"
+    description: "Filter to specific grower"
+
+sample_queries:
+  - description: "All active blocks with estimates for a grower"
+    sql: |
+      SELECT
+        GABLOCKIDX,
+        ID as BlockID,
+        NAME as BlockName,
+        CMTYIDX,
+        VARIETYIDX,
+        ACRES,
+        ESTIMATEDBINS
+      FROM dbo.VW_BLOCKS
+      WHERE GrowerID = '2012'
+        AND INACTIVEFLAG = 'N'
+      ORDER BY NAME
+
+  - description: "Total estimated bins by grower"
+    sql: |
+      SELECT
+        GrowerName,
+        GrowerID,
+        COUNT(*) as BlockCount,
+        SUM(ACRES) as TotalAcres,
+        SUM(ESTIMATEDBINS) as TotalEstimatedBins
+      FROM dbo.VW_BLOCKS
+      WHERE INACTIVEFLAG = 'N'
+      GROUP BY GrowerName, GrowerID
+      ORDER BY TotalEstimatedBins DESC
+
+  - description: "Blocks by commodity"
+    sql: |
+      SELECT
+        b.NAME as BlockName,
+        b.GrowerName,
+        b.ACRES,
+        b.ESTIMATEDBINS,
+        c.CommodityName
+      FROM dbo.VW_BLOCKS b
+      JOIN dbo.VW_CF_COMMODITIES c ON b.CMTYIDX = c.commodityidx
+      WHERE b.INACTIVEFLAG = 'N'
+      ORDER BY c.CommodityName, b.GrowerName
+
+notes: |
+  - All data is Cobblestone system - join to CF tables only
+  - GABLOCKIDX is the primary join key used by VW_BINSRECEIVED and portal views
+  - Block ID format appears to be [GrowerID][BlockSequence] (e.g., 2012001 = grower 2012, block 001)
+  - NAME contains denormalized grower name + block description
+  - ESTIMATEDBINS is per crop year - used to compare actual receiving vs forecast
+  - GACLASSIDX: ignore this column
+  - DISTRICT: null = Central Valley (default), 2 = Coastal, 3 = Southern Desert
+  - CROPYEARDESCR: normally null (perpetual contracts)
+
+_sample_data:
+- GABLOCKIDX: '15'
+  ID: '2012001'
+  NAME: 5 GEN - BLK 01 AUT GLD
+  GROWERNAMEIDX: '70'
+  GrowerName: 5 GEN CITRUS LLC
+  GrowerID: '2012'
+  GACLASSIDX: '1'
+  CMTYIDX: '1'
+  VARIETYIDX: '2'
+  ACRES: '9.5'
+  INACTIVEFLAG: N
+  ESTIMATEDBINS: '530.00'
+- GABLOCKIDX: '16'
+  ID: '2012002'
+  NAME: 5 GEN - BLK 02 CHISLET
+  GROWERNAMEIDX: '70'
+  GrowerName: 5 GEN CITRUS LLC
+  GrowerID: '2012'
+  GACLASSIDX: '1'
+  CMTYIDX: '1'
+  VARIETYIDX: '5'
+  ACRES: '9.2'
+  INACTIVEFLAG: N
+  ESTIMATEDBINS: '350.00'
+- GABLOCKIDX: '17'
+  ID: '2012004'
+  NAME: 5 GEN - BLK 04 CHISLET
+  GROWERNAMEIDX: '70'
+  GrowerName: 5 GEN CITRUS LLC
+  GrowerID: '2012'
+  GACLASSIDX: '1'
+  CMTYIDX: '1'
+  VARIETYIDX: '5'
+  ACRES: '8.9'
+  INACTIVEFLAG: N
+  ESTIMATEDBINS: '275.00'

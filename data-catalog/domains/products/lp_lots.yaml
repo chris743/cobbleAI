@@ -1,0 +1,124 @@
+# Schema documentation for dbo.VW_LP_LOTS
+# LP lot/pool reference table
+
+name: dbo.VW_LP_LOTS
+short_name: VW_LP_LOTS
+schema: dbo
+domain: products
+system: LP
+
+description: |
+  LP lot/pool reference table. Each row represents a lot or pool record in the LP system.
+  For domestic fruit, lot records almost always contain POOL values (not true lots).
+
+  GALOTIDX is the join key used by LP tables (VW_BININVENTORY.LotIDx, etc.).
+  ID contains the pool code string (e.g., 'C26NG01') for resolving pool names.
+
+business_purpose: |
+  - Resolve lotidx values in LP tables to pool/lot codes and descriptions
+  - Bridge LP inventory data back to Cobblestone grower accounting pools
+  - Track lot/pool open/close status for settlement
+
+row_count_approx: 2894
+refresh_frequency: "Real-time sync from LP system"
+
+columns:
+- name: GALOTIDX
+  type: int
+  nullable: false
+  description: |
+    Primary key. Grower Accounting lot index in LP system.
+    This is the join target for lotidx columns in LP tables
+    (VW_BININVENTORY.LotIDx, VW_LPSALESORDERS, VW_E_SHIPMENTS.GALOTIDX, etc.).
+
+- name: ID
+  type: nvarchar(12)
+  nullable: true
+  description: |
+    Lot/pool code string (e.g., 'C26NG01', 'COL', 'C001').
+    For domestic fruit, this is the pool code matching VW_CF_POOLS.ID.
+    Use this to display the human-readable pool/lot code.
+
+- name: DESCR
+  type: nvarchar(40)
+  nullable: true
+  description: "Lot/pool description. May match the ID or provide additional context."
+
+- name: ICCLOSEDFLAG
+  type: char(1)
+  nullable: true
+  description: "Inventory control closed flag. 'N' = open/active, 'Y' = closed (settled)."
+
+- name: CLOSEDATE
+  type: datetime2
+  nullable: true
+  description: "Date the lot/pool was closed for settlement. Null if still open."
+
+- name: HISTFLAG
+  type: char(1)
+  nullable: true
+  description: "History flag. 'Y' = historical/archived record. 'N' or null = current."
+
+- name: RECEIVEDATE
+  type: date
+  nullable: true
+  description: "Receive date associated with the lot. May be null for pool-type records."
+
+relationships: []
+# This IS the lookup table - LP tables join TO this via GALOTIDX.
+
+common_filters:
+  - column: ICCLOSEDFLAG
+    operation: "= 'N'"
+    description: "Open/active lots/pools only"
+
+  - column: HISTFLAG
+    operation: "<> 'Y'"
+    description: "Exclude archived historical records"
+
+  - column: ID
+    operation: "LIKE 'C26%'"
+    description: "Current season (2026) pool records"
+
+sample_queries:
+  - description: "Resolve lotidx to pool code for inventory"
+    sql: |
+      SELECT i.Commodity, l.ID as PoolCode, l.DESCR,
+        SUM(i.AvailableQuantity) as Bins
+      FROM dbo.VW_BININVENTORY i
+      JOIN dbo.VW_LP_LOTS l ON i.LotIDx = l.GALOTIDX
+      WHERE i.AvailableQuantity > 0
+      GROUP BY i.Commodity, l.ID, l.DESCR
+      ORDER BY l.ID
+
+  - description: "All open lots/pools"
+    sql: |
+      SELECT GALOTIDX, ID, DESCR, ICCLOSEDFLAG
+      FROM dbo.VW_LP_LOTS
+      WHERE ICCLOSEDFLAG = 'N'
+      ORDER BY ID
+
+notes: |
+  - GALOTIDX is the numeric FK; ID is the human-readable code string
+  - For domestic fruit, ID values are pool codes (e.g., 'C26NG01') matching VW_CF_POOLS.ID
+  - LP tables use lotidx (not poolidx) to reference pools - this is the LP convention
+  - Many historical records (HISTFLAG = 'Y', CLOSEDATE set) - filter these out for current data
+  - ~2894 rows includes many closed/historical lots
+
+_sample_data:
+- GALOTIDX: '18'
+  ID: COL
+  DESCR: COL
+  ICCLOSEDFLAG: Y
+  CLOSEDATE: '2022-12-31 00:00:00'
+  HISTFLAG: Y
+- GALOTIDX: '20'
+  ID: C001
+  ICCLOSEDFLAG: Y
+  CLOSEDATE: '2022-12-31 00:00:00'
+  HISTFLAG: Y
+- GALOTIDX: '526'
+  ID: col
+  ICCLOSEDFLAG: Y
+  CLOSEDATE: '2022-12-31 00:00:00'
+  HISTFLAG: Y

@@ -1,0 +1,163 @@
+# Schema documentation for dbo.VW_ALLRECEIVINGS
+# Comprehensive receiving records - Cobblestone system
+
+name: dbo.VW_ALLRECEIVINGS
+short_name: VW_ALLRECEIVINGS
+schema: dbo
+domain: receiving
+system: Cobblestone
+
+description: |
+  Comprehensive receiving records for all inbound bulk bins.
+  Similar structure to VW_BINSRECEIVED but with more records (~12K vs ~5K).
+  Each row = one receiving ticket/tag for a batch of field bins.
+
+  Cobblestone (CF) system data - source_database is always 'COBBLESTONE'.
+
+business_purpose: |
+  - Complete receiving history for the fiscal year
+  - Track all inbound bulk bin deliveries from growers
+  - Associate received fruit with grower block and pool
+  - Support operational receiving reports
+
+row_count_approx: 11999
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: source_database
+  type: nvarchar(50)
+  nullable: false
+  description: "Always 'COBBLESTONE'. Source system identifier."
+
+- name: InventoryIdx
+  type: bigint
+  nullable: false
+  description: "Primary key. Unique index for each receiving record."
+
+- name: Tag
+  type: nvarchar(50)
+  nullable: true
+  description: "Receiving tag number. Physical ticket for this batch."
+
+- name: Commodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Commodity name (e.g., 'LEMON', 'NAVEL'). Denormalized from CF commodity master."
+
+- name: Style
+  type: nvarchar(50)
+  nullable: true
+  description: "Bin style. 'BULK BIN' for field receiving."
+
+- name: WHDesc
+  type: nvarchar(50)
+  nullable: true
+  description: "Warehouse description. Receiving location (e.g., 'COBBLESTONE SANGER')."
+
+- name: blockID
+  type: nvarchar(50)
+  nullable: true
+  description: "Block ID string. Identifies the orchard block the fruit came from."
+
+- name: NAME
+  type: nvarchar(50)
+  nullable: true
+  description: "Block name (denormalized). Format: 'GROWER -- BLOCK_DESCRIPTION'."
+
+- name: ReceiveDate
+  type: datetime2
+  nullable: true
+  description: "Date the bins were received at the warehouse."
+
+- name: RecvQnt
+  type: float
+  nullable: true
+  description: "Received quantity in bulk bins."
+
+- name: poolID
+  type: nvarchar(50)
+  nullable: true
+  description: |
+    Pool ID code string (e.g., 'C26LG01'). The pool this fruit is assigned to.
+    Join to VW_CF_POOLS.ID for pool details.
+
+relationships:
+  - target: dbo.VW_CF_POOLS
+    join_column: poolID
+    target_column: ID
+    cardinality: many-to-one
+    note: "Pool master. Join poolID to CF_POOLS.ID."
+
+common_filters:
+  - column: ReceiveDate
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days"
+
+  - column: Commodity
+    operation: "= 'LEMON'"
+    description: "Filter to specific commodity"
+
+sample_queries:
+  - description: "Daily receiving summary"
+    sql: |
+      SELECT
+        CAST(ReceiveDate AS DATE) as RecvDate,
+        Commodity,
+        SUM(RecvQnt) as TotalBins,
+        COUNT(*) as Tickets
+      FROM dbo.VW_ALLRECEIVINGS
+      WHERE ReceiveDate >= DATEADD(day, -30, GETDATE())
+      GROUP BY CAST(ReceiveDate AS DATE), Commodity
+      ORDER BY RecvDate DESC, TotalBins DESC
+
+  - description: "Receiving by pool"
+    sql: |
+      SELECT poolID, Commodity,
+        SUM(RecvQnt) as TotalBins,
+        MIN(ReceiveDate) as FirstReceived,
+        MAX(ReceiveDate) as LastReceived
+      FROM dbo.VW_ALLRECEIVINGS
+      GROUP BY poolID, Commodity
+      ORDER BY poolID
+
+notes: |
+  - All data is Cobblestone system - join to CF tables only
+  - ~12K rows vs ~5K in VW_BINSRECEIVED - this is the more comprehensive view
+  - Same column structure as VW_BINSRECEIVED but missing CmtyIdx and GablockIdx
+  - NAME format uses '--' separator (vs '-' in VW_BINSRECEIVED)
+  - poolID joins to VW_CF_POOLS.ID (string join, not numeric idx)
+
+_sample_data:
+- source_database: COBBLESTONE
+  InventoryIdx: '121525'
+  Tag: '112532'
+  Commodity: LEMON
+  Style: BULK BIN
+  WHDesc: COBBLESTONE SANGER
+  blockID: '2100027'
+  NAME: GLESS, JOHN J. -- G&G-40AC LEMON
+  ReceiveDate: '2025-10-01 00:00:00'
+  RecvQnt: '48.0'
+  poolID: C26LG01
+- source_database: COBBLESTONE
+  InventoryIdx: '121534'
+  Tag: '112533'
+  Commodity: LEMON
+  Style: BULK BIN
+  WHDesc: COBBLESTONE SANGER
+  blockID: '2100027'
+  NAME: GLESS, JOHN J. -- G&G-40AC LEMON
+  ReceiveDate: '2025-10-01 00:00:00'
+  RecvQnt: '14.0'
+  poolID: C26LG01
+- source_database: COBBLESTONE
+  InventoryIdx: '121535'
+  Tag: '112534'
+  Commodity: LEMON
+  Style: BULK BIN
+  WHDesc: COBBLESTONE SANGER
+  blockID: '2100010'
+  NAME: GLESS, JOHN J. -- K&W-202 20 AC LEMON
+  ReceiveDate: '2025-10-01 00:00:00'
+  RecvQnt: '34.0'
+  poolID: C26LG01

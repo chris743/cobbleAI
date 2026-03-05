@@ -1,0 +1,37 @@
+domain: storage
+description: |
+  Miscellaneous charges associated with sales orders including storage fees,
+  marketing promos, brokerage, and other line-item charges from the LP system.
+
+  Despite the domain name, vw_E_StorageCharges contains various charge types
+  beyond just storage - any non-product charge line on a sales order.
+
+views:
+- name: rpt.vw_E_StorageCharges
+  system: LP
+  description: |
+    Miscellaneous charges on sales orders. Includes storage fees, marketing promos,
+    brokerage, and other non-product charge lines. Linked to orders by SONO.
+  use_for:
+    - Storage charge analysis
+    - Marketing promo tracking
+    - Brokerage and miscellaneous fee analysis
+    - Order-level charge breakdowns
+
+key_concepts:
+  - name: Charge Types
+    description: |
+      INVCDESCR identifies the charge type. Common values include:
+      - MARKETING PROMO - marketing promotional charges
+      - BROKERAGE BY SHIPPER - brokerage fees
+      - Storage-related charges
+      Each charge is tied to a sales order (SONO) and ship date.
+
+common_joins:
+  - description: "Charges with shipment detail"
+    sql: |
+      SELECT sc.SONO, sc.INVCDESCR, sc.Amount,
+        s.Customer, s.SHIPDATETIME
+      FROM rpt.vw_E_StorageCharges sc
+      JOIN rpt.vw_Shipments_RS s ON sc.SONO = s.SONO
+      WHERE s.IsDeleted = 0

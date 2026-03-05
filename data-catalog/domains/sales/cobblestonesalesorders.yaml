@@ -1,0 +1,210 @@
+# Schema documentation for dbo.VW_COBBLESTONESALESORDERS
+# Cobblestone system sales orders (juice/bulk)
+
+name: dbo.VW_COBBLESTONESALESORDERS
+short_name: VW_COBBLESTONESALESORDERS
+schema: dbo
+domain: sales
+system: Cobblestone
+
+description: |
+  Sales orders from the Cobblestone system. Primarily covers juice bin sales
+  and bulk product transactions. Each row = one order line.
+
+  For finished goods (carton/bag) sales, use VW_LPSALESORDERS instead.
+
+business_purpose: |
+  - Track juice and bulk bin sales
+  - Monitor order status and fulfillment
+  - Revenue analysis for Cobblestone-originated sales
+
+row_count_approx: 15244
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: SOStatus
+  type: nvarchar(100)
+  nullable: true
+  description: "Sales order status (e.g., 'Paid In Full', 'Open', 'Shipped')."
+
+- name: SODATETIME
+  type: datetime2
+  nullable: true
+  description: "Sales order date. When the order was created."
+
+- name: SHIPDATETIME
+  type: datetime2
+  nullable: true
+  description: "Ship date. When the order was/will be shipped."
+
+- name: INVOICEDATE
+  type: datetime2
+  nullable: true
+  description: "Invoice date. When the customer was invoiced."
+
+- name: WAREHOUSEIDX
+  type: int
+  nullable: true
+  description: "Warehouse index. Which warehouse fulfills this order."
+
+- name: Warehouse
+  type: nvarchar(40)
+  nullable: true
+  description: "Warehouse name (e.g., 'COBBLESTONE SANGER')."
+
+- name: Storage
+  type: nvarchar(50)
+  nullable: true
+  description: "Storage location code."
+
+- name: PRODUCTIDX
+  type: int
+  nullable: true
+  description: "Product index. Join to VW_PRODUCTS for product details."
+
+- name: UNITSPERPALLET
+  type: int
+  nullable: true
+  description: "Units per pallet for this product. 0 for bulk/bin products."
+
+- name: LINETYPE
+  type: nvarchar(10)
+  nullable: true
+  description: "Order line type. '1' = standard product line."
+
+- name: EQUIVFACTOR
+  type: float
+  nullable: true
+  description: |
+    Standard carton equivalent factor.
+    Converts ORDERQNT to standard cartons.
+    Example: JUICE BIN = 23.25 (1 juice bin = 23.25 standard carton equivalents).
+
+- name: ORDERQNT
+  type: numeric(24,8)
+  nullable: true
+  description: "Ordered quantity in product units (e.g., bins for juice)."
+
+- name: equivqnt
+  type: float
+  nullable: true
+  description: "Standard carton equivalent quantity. ORDERQNT * EQUIVFACTOR."
+
+- name: RESERVEQNT
+  type: float
+  nullable: true
+  description: "Reserved quantity. Inventory allocated but not yet shipped."
+
+- name: FOBPrice
+  type: numeric(24,8)
+  nullable: true
+  description: "FOB (Free On Board) price per unit. Price at shipping point before freight."
+
+- name: Price
+  type: numeric(24,8)
+  nullable: true
+  description: "Delivered price per unit (includes freight if applicable)."
+
+- name: SALEAMT
+  type: numeric(24,8)
+  nullable: true
+  description: "Total sale amount for this line. ORDERQNT * Price."
+
+- name: CustomerName
+  type: nvarchar(40)
+  nullable: true
+  description: "Customer name (e.g., 'VITA-PAKT CITRUS')."
+
+- name: Commodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Commodity name (e.g., 'NAVEL')."
+
+- name: Style
+  type: nvarchar(50)
+  nullable: true
+  description: "Pack style (e.g., 'JUICE BIN')."
+
+- name: SizeName
+  type: nvarchar(50)
+  nullable: true
+  description: "Size code (e.g., 'JUICE' for juice bins). Numeric sizes are zero-padded to 3 digits (e.g., '088' not '88')."
+
+- name: Grade
+  type: nvarchar(50)
+  nullable: true
+  description: "Quality grade (e.g., 'JUICE')."
+
+- name: Region
+  type: nvarchar(50)
+  nullable: true
+  description: "Origin region."
+
+- name: Method
+  type: nvarchar(50)
+  nullable: true
+  description: "Packing method."
+
+- name: TimeFlag
+  type: varchar(5)
+  nullable: false
+  description: "Timestamp flag for the entry. Not used for analysis - focus on SHIPDATETIME instead."
+
+relationships:
+  - target: dbo.VW_PRODUCTS
+    join_column: PRODUCTIDX
+    target_column: ProductIdx
+    cardinality: many-to-one
+    note: "Product details"
+
+common_filters:
+  - column: SHIPDATETIME
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days shipped"
+
+  - column: SOStatus
+    operation: "= 'Paid In Full'"
+    description: "Completed/paid orders"
+
+sample_queries:
+  - description: "Juice bin sales by customer"
+    sql: |
+      SELECT CustomerName, Commodity,
+        SUM(ORDERQNT) as TotalBins,
+        SUM(equivqnt) as TotalEquivCtns,
+        SUM(SALEAMT) as TotalRevenue
+      FROM dbo.VW_COBBLESTONESALESORDERS
+      WHERE SHIPDATETIME >= DATEADD(day, -30, GETDATE())
+      GROUP BY CustomerName, Commodity
+      ORDER BY TotalRevenue DESC
+
+notes: |
+  - Primarily juice/bulk sales from Cobblestone system
+  - For finished goods (carton/bag) sales, use VW_LPSALESORDERS
+  - Sample data shows SALEAMT = 0 for some records (possibly internal transfers or consignment)
+  - equivqnt = ORDERQNT * EQUIVFACTOR for volume standardization
+  - TimeFlag is a timestamp flag - not relevant for analysis; use SHIPDATETIME for date filtering
+
+_sample_data:
+- SOStatus: Paid In Full
+  SODATETIME: '2024-01-26 00:00:00'
+  SHIPDATETIME: '2024-01-27 00:00:00'
+  INVOICEDATE: '2024-01-27 00:00:00'
+  WAREHOUSEIDX: '1'
+  Warehouse: COBBLESTONE SANGER
+  PRODUCTIDX: '2384'
+  UNITSPERPALLET: '0'
+  LINETYPE: '1'
+  EQUIVFACTOR: '23.25'
+  ORDERQNT: '48.00000000'
+  equivqnt: '1116.0'
+  RESERVEQNT: '0.0'
+  FOBPrice: 0E-8
+  Price: 0E-8
+  SALEAMT: 0E-8
+  CustomerName: VITA-PAKT CITRUS
+  Commodity: NAVEL
+  Style: JUICE BIN
+  SizeName: JUICE
+  Grade: JUICE
+  TimeFlag: 'False'

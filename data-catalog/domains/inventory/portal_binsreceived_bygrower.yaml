@@ -1,0 +1,157 @@
+# Schema documentation for dbo.vw_Portal_BinsReceived_ByGrower
+# Pre-aggregated receiving summary by grower - Cobblestone system (grower portal)
+
+name: dbo.vw_Portal_BinsReceived_ByGrower
+short_name: vw_Portal_BinsReceived_ByGrower
+schema: dbo
+domain: inventory
+system: Cobblestone
+
+description: |
+  Pre-aggregated receiving summary rolled up to the grower level. One row per grower.
+  This is the highest-level summary - all blocks and commodities combined per grower.
+
+  This is Cobblestone (CF) system data - source_database is always 'COBBLESTONE'.
+  Fiscal year runs October 1 - September 30 (aligned with citrus season).
+
+business_purpose: |
+  - Grower portal: top-level receiving dashboard per grower
+  - Quick answer to "how much has this grower delivered this season?"
+  - Compare current season receiving pace to prior year
+  - Track recent delivery activity (last 30 days)
+
+row_count_approx: 175
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: source_database
+  type: nvarchar(20)
+  nullable: false
+  description: "Always 'COBBLESTONE' for this view."
+
+- name: GrowerID
+  type: nvarchar(6)
+  nullable: false
+  description: "Grower ID code (e.g., '2012'). Unique identifier per grower."
+
+- name: GrowerName
+  type: nvarchar(40)
+  nullable: false
+  description: "Grower name (e.g., '5 GEN CITRUS LLC', 'CITRICOVE ORCHARDS')."
+
+- name: LastReceivedDate
+  type: date
+  nullable: true
+  description: "Date of the most recent receiving ticket across all blocks for this grower. Null if no bins received."
+
+- name: LastReceivedQty
+  type: decimal(38,4)
+  nullable: true
+  description: "Quantity (bins) from the most recent receiving ticket across all blocks."
+
+- name: Bins_Last30
+  type: decimal(38,4)
+  nullable: true
+  description: "Total bins received from this grower (all blocks combined) in the last 30 days."
+
+- name: Bins_FYTD
+  type: decimal(38,4)
+  nullable: true
+  description: |
+    Total bins received fiscal-year-to-date (Oct 1 through today).
+    All blocks, all commodities combined for this grower.
+
+- name: Bins_PriorFYTD
+  type: decimal(38,4)
+  nullable: true
+  description: |
+    Total bins received in the prior fiscal year to the same relative date.
+    Enables year-over-year pacing comparison at the grower level.
+
+relationships: []
+# No joins needed - this is a fully denormalized grower-level summary.
+# For block-level detail, use vw_Portal_BinsReceived_ByBlock or ByBlock_A.
+
+common_filters:
+  - column: Bins_FYTD
+    operation: "> 0"
+    description: "Growers with receiving activity this season"
+
+  - column: Bins_Last30
+    operation: "> 0"
+    description: "Growers with recent deliveries"
+
+  - column: GrowerID
+    operation: "= '2012'"
+    description: "Filter to specific grower"
+
+sample_queries:
+  - description: "Top growers by FYTD receiving volume"
+    sql: |
+      SELECT
+        GrowerName,
+        GrowerID,
+        Bins_FYTD,
+        Bins_PriorFYTD,
+        Bins_Last30,
+        LastReceivedDate
+      FROM dbo.vw_Portal_BinsReceived_ByGrower
+      WHERE Bins_FYTD > 0
+      ORDER BY Bins_FYTD DESC
+
+  - description: "Growers with recent activity"
+    sql: |
+      SELECT
+        GrowerName,
+        LastReceivedDate,
+        LastReceivedQty,
+        Bins_Last30,
+        Bins_FYTD
+      FROM dbo.vw_Portal_BinsReceived_ByGrower
+      WHERE Bins_Last30 > 0
+      ORDER BY LastReceivedDate DESC
+
+  - description: "Year-over-year comparison"
+    sql: |
+      SELECT
+        GrowerName,
+        Bins_FYTD as CurrentSeason,
+        Bins_PriorFYTD as PriorSeason,
+        Bins_FYTD - Bins_PriorFYTD as Difference
+      FROM dbo.vw_Portal_BinsReceived_ByGrower
+      WHERE Bins_FYTD > 0 OR Bins_PriorFYTD > 0
+      ORDER BY Bins_FYTD DESC
+
+notes: |
+  - This view is PRE-AGGREGATED - one row per grower. No joins or GROUP BY needed.
+  - Fiscal year = Oct 1 - Sep 30 (citrus season).
+  - All data is Cobblestone system.
+  - 175 rows = ~175 active growers in the system.
+  - For block-level detail, drill down to vw_Portal_BinsReceived_ByBlock.
+  - No commodity breakdown at this level - use ByBlock views for commodity detail.
+  - LastReceivedQty is the quantity from the single most recent ticket, NOT a total.
+
+_sample_data:
+- source_database: COBBLESTONE
+  GrowerID: '001'
+  GrowerName: COBBLESTONE FRUIT
+  LastReceivedQty: '0.0000'
+  Bins_Last30: '0.0000'
+  Bins_FYTD: '0.0000'
+  Bins_PriorFYTD: '0.0000'
+- source_database: COBBLESTONE
+  GrowerID: '2012'
+  GrowerName: 5 GEN CITRUS LLC
+  LastReceivedDate: '2026-02-13'
+  LastReceivedQty: '330.0000'
+  Bins_Last30: '330.0000'
+  Bins_FYTD: '330.0000'
+  Bins_PriorFYTD: '0.0000'
+- source_database: COBBLESTONE
+  GrowerID: '2016'
+  GrowerName: CITRICOVE ORCHARDS
+  LastReceivedDate: '2026-02-02'
+  LastReceivedQty: '96.0000'
+  Bins_Last30: '96.0000'
+  Bins_FYTD: '737.0000'
+  Bins_PriorFYTD: '0.0000'

@@ -1,0 +1,356 @@
+# System Architecture Reference
+# CRITICAL: Read this before querying any tables
+# This document explains the dual-system structure and join rules
+
+overview: |
+  The data warehouse contains data from TWO source systems that must not be mixed:
+  
+  1. Cobblestone (CF) - Grower accounting and settlement
+  2. LP - Inventory and packing operations
+  
+  These systems share ID column names (CommodityID, GrowerID, etc.) but the IDs 
+  are NOT compatible across systems. You must always verify source_database matches
+  when joining tables.
+
+# =============================================================================
+# SOURCE SYSTEMS
+# =============================================================================
+
+source_systems:
+
+  - name: Cobblestone
+    abbreviation: CF
+    source_database_value: "cobblestone"
+    description: |
+      Grower-facing accounting and settlement system.
+      This is where fruit ENTERS the operation from the field.
+    
+    handles:
+      - Bulk bin receiving from orchards
+      - Grower and block master data
+      - Pool creation and management
+      - Grower settlements and payments
+      - Packout reports to growers
+    
+    key_tables:
+      - dbo.VW_CF_COMMODITIES
+      - dbo.VW_CF_POOLS
+      - dbo.VW_ALLRECEIVINGS
+      - dbo.VW_BINSRECEIVED
+      - dbo.VW_BLOCKS
+      - dbo.vw_Portal_BinsReceived_ByGrower
+      - dbo.vw_Portal_BinsReceived_ByBlock
+      - dbo.VW_14DAYAVGPACKOUT
+    
+    pool_id_location: "pool_id column"
+
+  - name: LP
+    abbreviation: LP
+    source_database_value: "LP"
+    description: |
+      Inventory and operations system.
+      This is where fruit is PROCESSED and SOLD.
+    
+    handles:
+      - Processed bin inventory (post-packing)
+      - Finished goods inventory (cartons/pallets)
+      - Packing and repacking transactions
+      - Sales orders
+      - Shipments
+    
+    key_tables:
+      - dbo.VW_LP_COMMODITIES
+      - dbo.VW_LP_LOTS
+      - dbo.VW_LPSALESORDERS
+      - dbo.VW_BININVENTORY
+      - dbo.VW_PRODUCTS
+      - rpt.vw_IC_Repack_Run_Summary
+      - rpt.vw_IC_REPACKING_OutputByRun
+      - dbo.VW_E_SHIPMENTS
+    
+    pool_id_location: "lot_id column (NOT pool_id)"
+
+# =============================================================================
+# DATA FLOW
+# =============================================================================
+
+process_flow:
+  description: |
+    Fruit moves from Cobblestone → LP at the packing entry point.
+    Before packing: Cobblestone tracks bulk bins by grower/block.
+    After packing: LP tracks processed bins and finished goods.
+
+  stages:
+    - stage: 1
+      name: Field Receiving
+      system: Cobblestone
+      description: |
+        Bulk bins arrive from grower orchards.
+        Receiving tickets created with grower, block, commodity, bin count.
+        Fruit assigned to a pool for settlement.
+      tables:
+        - dbo.VW_ALLRECEIVINGS
+        - dbo.VW_BINSRECEIVED
+
+    - stage: 2
+      name: Packing Entry
+      system: Cobblestone → LP
+      description: |
+        THE HANDOFF POINT BETWEEN SYSTEMS.
+        
+        Bulk bins are washed, waxed, graded, sized and packed into processed bins.
+        This creates NEW records in LP - outputs only, no inputs.
+        
+        This is different from a repack which transforms existing LP inventory.
+      tables: []
+
+    - stage: 3
+      name: Processed Bin Inventory
+      system: LP
+      description: |
+        Processed bins sit in inventory.
+        Each bin = single commodity, size, grade combination.
+        Bins can be stored, repacked, or shipped.
+      tables:
+        - dbo.VW_BININVENTORY
+        - dbo.BININVSNAPSHOTS_EXT
+
+    - stage: 4
+      name: Repacking
+      system: LP
+      description: |
+        Transforms LP inventory into different forms:
+        - Bin → Cartons (most common)
+        - Cartons → Different style cartons (restyle)
+        - Cartons → Bins (return to storage)
+        - Bins → Bins (regrade)
+        
+        Unlike packing entry, repacks have INPUTS and OUTPUTS.
+      tables:
+        - rpt.vw_IC_Repack_Run_Summary
+        - rpt.vw_IC_REPACKING_OutputByRun
+
+    - stage: 5
+      name: Finished Goods & Shipment
+      system: LP
+      description: |
+        Packed cartons on pallets ready for sale.
+        Sales orders fulfilled, shipments sent to customers.
+      tables:
+        - dbo.VW_LPSALESORDERS
+        - dbo.VW_E_SHIPMENTS
+        - rpt.vw_Shipments_RS
+
+# =============================================================================
+# JOIN RULES - CRITICAL
+# =============================================================================
+
+join_rules:
+
+  - rule_id: 1
+    name: "Always join on idx columns"
+    severity: CRITICAL
+    description: |
+      All table joins use idx (index) columns, not name or code columns.
+      
+      Common idx columns:
+      - commodityidx
+      - poolidx
+      - lotidx
+      - groweridx
+      - blockidx
+      - productidx
+      
+      These are the primary/foreign keys across the system.
+    
+    wrong_example: |
+      -- WRONG: Joining on name columns
+      SELECT * 
+      FROM VW_BININVENTORY b
+      JOIN VW_LP_COMMODITIES c ON b.CommodityName = c.CommodityName
+    
+    correct_example: |
+      -- CORRECT: Join on idx column
+      SELECT * 
+      FROM VW_BININVENTORY b
+      JOIN VW_LP_COMMODITIES c ON b.commodityidx = c.commodityidx
+
+  - rule_id: 2
+    name: "idx columns are NOT unique across CF and LP"
+    severity: CRITICAL
+    description: |
+      idx values (commodityidx, groweridx, etc.) are NOT unique across systems.
+      commodityidx 5 in Cobblestone is a DIFFERENT commodity than commodityidx 5 in LP.
+      
+      When a table has mixed data (both CF and LP records), you MUST filter or match
+      source_database before joining.
+    
+    wrong_example: |
+      -- WRONG: Joins CF commodities to LP inventory
+      SELECT * 
+      FROM VW_BININVENTORY b
+      JOIN VW_CF_COMMODITIES c ON b.commodityidx = c.commodityidx
+    
+    correct_example: |
+      -- CORRECT: Use LP commodity table for LP inventory
+      SELECT * 
+      FROM VW_BININVENTORY b
+      JOIN VW_LP_COMMODITIES c ON b.commodityidx = c.commodityidx
+
+  - rule_id: 3
+    name: "Pool idx is in different columns per system"
+    severity: CRITICAL
+    description: |
+      - Cobblestone data: Pool idx is in `poolidx` column
+      - LP data: Pool idx is in `lotidx` column
+      
+      The `lotidx` column in LP almost always contains pool values for domestic fruit.
+    
+    wrong_example: |
+      -- WRONG: Looking for poolidx in LP data
+      SELECT * FROM VW_LPSALESORDERS WHERE poolidx = 123
+    
+    correct_example: |
+      -- CORRECT: Pool is in lotidx for LP data
+      SELECT * FROM VW_LPSALESORDERS WHERE lotidx = 123
+
+  - rule_id: 4
+    name: "Use correct reference table for each system"
+    severity: CRITICAL
+    description: |
+      - Cobblestone data → JOIN to VW_CF_* tables
+      - LP data → JOIN to VW_LP_* tables
+      
+      These tables have different idx values.
+    
+    guidance: |
+      If querying receiving/grower data → use CF tables (VW_CF_COMMODITIES, VW_CF_POOLS)
+      If querying inventory/sales data → use LP tables (VW_LP_COMMODITIES, VW_LP_LOTS)
+
+  - rule_id: 5
+    name: "Pre-sorted vs mixed tables"
+    severity: HIGH
+    description: |
+      Some tables contain only CF or only LP data (pre-sorted).
+      Some tables contain BOTH and require source_database filtering.
+      
+      Check the table documentation or sample the source_database column
+      to determine if filtering is needed.
+    
+    guidance: |
+      Before joining, run: 
+      SELECT DISTINCT source_database FROM [table_name]
+      to understand what data the table contains.
+
+# =============================================================================
+# PACKING vs REPACKING - KEY DISTINCTION
+# =============================================================================
+
+transaction_types:
+
+  - type: Packing Entry
+    system_transition: "Cobblestone → LP"
+    has_inputs: false
+    has_outputs: true
+    description: |
+      First-time conversion of bulk bins into processed bins.
+      Creates NEW LP inventory records.
+      No input records because bulk bins are in Cobblestone, not LP.
+      
+      This is the birth of inventory in the LP system.
+
+  - type: Repack Entry
+    system_transition: "LP → LP"
+    has_inputs: true
+    has_outputs: true
+    description: |
+      Transforms existing LP inventory into different forms.
+      Both inputs (consumed) and outputs (created) are LP records.
+      
+      Examples:
+      - 10 bins in → 232 cartons out
+      - 50 cartons style A in → 50 cartons style B out
+      - 20 cartons in → 1 bin out (return to storage)
+
+# =============================================================================
+# QUICK REFERENCE: Which system for which question?
+# =============================================================================
+
+# Common idx columns for joins
+# =============================================================================
+# COLUMN NAMING CONVENTIONS
+# =============================================================================
+
+column_prefixes:
+  - prefix: "GA"
+    meaning: "Grower Accounting"
+    description: |
+      Columns prefixed with GA contain grower accounting/settlement data.
+      These often bridge LP operational data back to Cobblestone grower accounting.
+      
+      Examples:
+      - GALOTIDX = the pool code string (e.g., 'C26NG01') in LP tables
+      
+      When looking for pool codes or grower settlement references in LP data,
+      check for GA-prefixed columns.
+
+  - prefix: "CF"
+    meaning: "Cobblestone"
+    description: |
+      Columns prefixed with CF reference Cobblestone system data.
+      Example: CFCommodityIDX = commodity index for joining to VW_CF_COMMODITIES
+
+idx_columns:
+  - name: commodityidx
+    description: "Links to commodity reference tables"
+    cf_table: VW_CF_COMMODITIES
+    lp_table: VW_LP_COMMODITIES
+  
+  - name: groweridx
+    description: "Links to grower master data"
+    cf_table: "CF grower tables"
+    lp_table: "LP grower tables"
+  
+  - name: blockidx
+    description: "Links to orchard block data"
+    cf_table: VW_BLOCKS
+    lp_table: null
+  
+  - name: poolidx
+    description: "Pool reference - CF data only"
+    cf_table: VW_CF_POOLS
+    lp_table: "N/A - use lotidx for pools in LP"
+  
+  - name: lotidx
+    description: "Lot/Pool reference - in LP this usually contains pool values"
+    cf_table: null
+    lp_table: VW_LP_LOTS
+  
+  - name: productidx
+    description: "Links to product master"
+    cf_table: null
+    lp_table: VW_PRODUCTS
+
+query_routing:
+  
+  use_cobblestone_tables:
+    - "How much did we receive from [grower]?"
+    - "What blocks did [grower] harvest this week?"
+    - "What's the packout breakdown for [pool]?"
+    - "How many bulk bins came in today?"
+    - "What pools are open for [commodity]?"
+    - "What's [grower]'s settlement?"
+  
+  use_lp_tables:
+    - "How much [commodity] [size] [grade] is in inventory?"
+    - "What did we ship to [customer]?"
+    - "What's on order for next week?"
+    - "How many cartons did we pack today?"
+    - "What's our repack yield?"
+    - "What finished goods are on hand?"
+  
+  use_both_systems:
+    - "Trace this lot back to the grower" 
+    - "Compare receiving to packout by grower"
+    - "Full inventory position including bulk bins"
+    # Note: These require careful joining through pool/lot IDs

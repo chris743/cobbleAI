@@ -1,0 +1,126 @@
+# Schema documentation for dbo.VW_14DAYAVGPACKOUT
+# 14-day rolling average packout by commodity/size/grade
+
+name: dbo.VW_14DAYAVGPACKOUT
+short_name: VW_14DAYAVGPACKOUT
+schema: dbo
+domain: packout
+system: Cobblestone
+
+description: |
+  14-day rolling average packout percentages by commodity, size, and grade.
+  Each row = one commodity/size/grade combination with its carton quantity and
+  percentage of total commodity output.
+
+  This is the base packout view. For extended details with product info and
+  bin allocation, use VW_14DAYAVGPACKOUT_EXT.
+
+business_purpose: |
+  - Show growers the size/grade distribution of processed fruit
+  - Support pricing decisions based on current packout profile
+  - Track packout trends to identify quality shifts
+  - Inform sales about available size/grade mix
+
+row_count_approx: 113
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: Commodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Commodity name (e.g., 'BLOOD', 'NAVEL', 'LEMON'). CF commodity name."
+
+- name: CmtyIdx
+  type: int
+  nullable: true
+  description: "Cobblestone commodity index. Join to VW_CF_COMMODITIES on commodityidx."
+
+- name: SizeName
+  type: nvarchar(50)
+  nullable: true
+  description: "Fruit size code (e.g., '040', '048', '056'). Count per standard carton. Always zero-padded to 3 digits."
+
+- name: Grade
+  type: nvarchar(50)
+  nullable: true
+  description: "Quality grade (e.g., 'FANCY', 'CHOICE')."
+
+- name: qnt
+  type: numeric(38,6)
+  nullable: true
+  description: "Total carton quantity for this size/grade over the 14-day rolling window."
+
+- name: commodity_total
+  type: numeric(38,6)
+  nullable: true
+  description: "Total cartons across ALL sizes and grades for this commodity over the 14-day window."
+
+- name: pct_of_commodity
+  type: numeric(38,6)
+  nullable: true
+  description: |
+    Percentage of commodity total. Formula: qnt / commodity_total.
+    IMPORTANT: Stored as a decimal (e.g., 0.029655). ALWAYS multiply by 100 for display
+    (0.029655 * 100 = 2.97%). Use ROUND(pct_of_commodity * 100, 2) in queries.
+    Sum of all pct_of_commodity for a commodity = 1.0.
+
+relationships:
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CmtyIdx
+    target_column: CommodityIDx
+    cardinality: many-to-one
+    note: "CF commodity lookup"
+
+common_filters:
+  - column: Commodity
+    operation: "= 'NAVEL'"
+    description: "Filter to specific commodity"
+
+  - column: Grade
+    operation: "= 'FANCY'"
+    description: "Fancy grade only"
+
+sample_queries:
+  - description: "Packout breakdown for a commodity"
+    sql: |
+      SELECT SizeName, Grade, qnt as Cartons,
+        ROUND(pct_of_commodity * 100, 2) as PctOfCommodity
+      FROM dbo.VW_14DAYAVGPACKOUT
+      WHERE Commodity = 'NAVEL'
+      ORDER BY Grade, SizeName
+
+  - description: "Top sizes by volume across all commodities"
+    sql: |
+      SELECT Commodity, SizeName, Grade, qnt as Cartons,
+        ROUND(pct_of_commodity * 100, 2) as Pct
+      FROM dbo.VW_14DAYAVGPACKOUT
+      ORDER BY qnt DESC
+
+notes: |
+  - Rolling 14-day average - not a point-in-time snapshot
+  - pct_of_commodity is a decimal (multiply by 100 for percentage display)
+  - ~113 rows = all active commodity/size/grade combinations
+  - CF system data - CmtyIdx references Cobblestone commodity table
+
+_sample_data:
+- Commodity: BLOOD
+  CmtyIdx: '2'
+  SizeName: '040'
+  Grade: FANCY
+  qnt: '8.000000'
+  commodity_total: '5800.000000'
+  pct_of_commodity: '0.001379'
+- Commodity: BLOOD
+  CmtyIdx: '2'
+  SizeName: 048
+  Grade: FANCY
+  qnt: '36.000000'
+  commodity_total: '5800.000000'
+  pct_of_commodity: '0.006206'
+- Commodity: BLOOD
+  CmtyIdx: '2'
+  SizeName: '056'
+  Grade: FANCY
+  qnt: '172.000000'
+  commodity_total: '5800.000000'
+  pct_of_commodity: '0.029655'

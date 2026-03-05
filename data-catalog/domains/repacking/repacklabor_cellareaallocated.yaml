@@ -1,0 +1,264 @@
+# Schema documentation for rpt.vw_RepackLabor_CellAreaAllocated
+# Labor data with cost allocation across packing line cells and facilities
+
+name: rpt.vw_RepackLabor_CellAreaAllocated
+short_name: vw_RepackLabor_CellAreaAllocated
+schema: rpt
+domain: repacking
+system: UKG
+
+description: |
+  UKG labor data with cost allocation across packing line cells and facilities.
+  Same employee/day grain as vw_LaborSummaryDaily_Combined, but with added
+  CellArea classification and pay allocation columns.
+
+  Cell areas are physical packing line cells:
+  - A/B cells: Packing line cells at the Sanger facility
+  - C cell: Additional cell at Sanger
+  - Reedley: Separate facility
+  - Sanger: Sanger facility total
+
+  Column names are cleaned (no spaces/parens) vs the Combined labor view.
+
+business_purpose: |
+  - Allocate labor costs to specific packing line cells
+  - Compare cost efficiency across cells (A/B vs C) and facilities (Sanger vs Reedley)
+  - Support per-unit cost calculations by production area
+  - Link labor costs to repack run output for cost-per-carton analysis
+
+row_count_approx: 39679
+refresh_frequency: "Weekly - Thursdays at 8am PST from UKG"
+
+columns:
+# === EMPLOYEE / DATE ===
+- name: EmployeeId
+  type: nvarchar(50)
+  nullable: false
+  description: "UKG employee ID. Part of composite key with CounterDate."
+
+- name: CounterDate
+  type: date
+  nullable: false
+  description: "Work date. Part of composite key with EmployeeId."
+
+- name: EmployeeName
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Full employee name."
+
+- name: Manager1Name
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Direct manager name."
+
+# === DEPARTMENT / ROLE ===
+- name: CostCenters2
+  type: nvarchar(255)
+  nullable: false
+  description: "Actual cost center worked (e.g., '55 - PROCESSING- SANGER')."
+
+- name: PayrollJobTitle
+  type: nvarchar(255)
+  nullable: false
+  description: "Payroll job title."
+
+- name: DefaultCostCenters
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Employee's default/home cost center."
+
+# === HOURS (all numeric - no text version) ===
+- name: RegularHours
+  type: decimal(10,2)
+  nullable: true
+  description: "Regular hours worked."
+
+- name: DailyOvertimeHours
+  type: decimal(10,2)
+  nullable: true
+  description: "Daily overtime hours (over 8 hrs/day)."
+
+- name: WeeklyOvertimeHours
+  type: decimal(10,2)
+  nullable: true
+  description: "Weekly overtime hours (over 40 hrs/week)."
+
+- name: DoubleTimeHours
+  type: decimal(10,2)
+  nullable: true
+  description: "Double time hours (per CA labor law)."
+
+- name: TotalHours
+  type: decimal(10,2)
+  nullable: true
+  description: "Total hours = Regular + Daily OT + Weekly OT + Double Time."
+
+# === PAY (all numeric) ===
+- name: HourlyPay
+  type: decimal(12,2)
+  nullable: true
+  description: "Base hourly pay rate."
+
+- name: RegularPay
+  type: decimal(12,2)
+  nullable: true
+  description: "Regular pay amount."
+
+- name: OvertimePay
+  type: decimal(12,2)
+  nullable: true
+  description: "Daily overtime pay (1.5x rate)."
+
+- name: WeeklyOvertimePay
+  type: decimal(12,2)
+  nullable: true
+  description: "Weekly overtime pay."
+
+- name: DoubleTimePay
+  type: decimal(12,2)
+  nullable: true
+  description: "Double time pay (2x rate)."
+
+- name: TotalPay
+  type: decimal(12,2)
+  nullable: true
+  description: "Total pay = Regular + OT + DT + Weekly OT."
+
+# === SYNC / AUDIT ===
+- name: first_seen_utc
+  type: datetime2
+  nullable: false
+  description: "UTC timestamp when first ingested."
+
+- name: last_seen_utc
+  type: datetime2
+  nullable: false
+  description: "UTC timestamp when last seen in UKG export."
+
+- name: last_updated_utc
+  type: datetime2
+  nullable: false
+  description: "UTC timestamp when last modified."
+
+- name: is_deleted
+  type: bit
+  nullable: false
+  description: "Soft delete flag. 0 = active, 1 = deleted."
+
+- name: deleted_utc
+  type: datetime2
+  nullable: true
+  description: "UTC timestamp when marked deleted. Null for active records."
+
+# === CELL AREA ALLOCATION ===
+- name: CellArea
+  type: varchar(11)
+  nullable: false
+  description: |
+    Packing line cell area assignment for this employee's work.
+    Values indicate which physical area the employee worked in.
+    'NULL' (string) if not assigned to a specific cell.
+
+- name: AllocPay_ABCell
+  type: decimal(15,4)
+  nullable: true
+  description: "Pay allocated to A/B packing line cells at Sanger."
+
+- name: AllocPay_CCell
+  type: decimal(15,4)
+  nullable: true
+  description: "Pay allocated to C packing line cell at Sanger."
+
+- name: AllocPay_Reedley
+  type: decimal(12,2)
+  nullable: true
+  description: "Pay allocated to Reedley facility."
+
+- name: AllocPay_Sanger
+  type: decimal(12,2)
+  nullable: true
+  description: "Pay allocated to Sanger facility overall."
+
+- name: AllocPay_All
+  type: decimal(12,2)
+  nullable: true
+  description: "Total allocated pay across all cells/facilities. Should equal TotalPay when fully allocated."
+
+relationships: []
+
+common_filters:
+  - column: is_deleted
+    operation: "= 0"
+    description: "Active records only"
+
+  - column: CounterDate
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days"
+
+  - column: AllocPay_All
+    operation: "> 0"
+    description: "Only records with allocated pay"
+
+sample_queries:
+  - description: "Daily labor cost by cell area"
+    sql: |
+      SELECT
+        CounterDate,
+        SUM(AllocPay_ABCell) as ABCellPay,
+        SUM(AllocPay_CCell) as CCellPay,
+        SUM(AllocPay_Reedley) as ReedleyPay,
+        SUM(AllocPay_Sanger) as SangerPay
+      FROM rpt.vw_RepackLabor_CellAreaAllocated
+      WHERE is_deleted = 0
+        AND CounterDate >= DATEADD(day, -30, GETDATE())
+      GROUP BY CounterDate
+      ORDER BY CounterDate DESC
+
+  - description: "Labor cost summary by facility"
+    sql: |
+      SELECT
+        SUM(AllocPay_Sanger) as TotalSanger,
+        SUM(AllocPay_Reedley) as TotalReedley,
+        SUM(AllocPay_All) as GrandTotal
+      FROM rpt.vw_RepackLabor_CellAreaAllocated
+      WHERE is_deleted = 0
+        AND CounterDate >= DATEADD(day, -30, GETDATE())
+
+notes: |
+  - Same employee/day grain as vw_LaborSummaryDaily_Combined
+  - Column names are cleaned (no spaces/parens) - easier to query than Combined view
+  - All numeric columns are properly typed (no text formatting issues)
+  - CellArea = 'NULL' (string) when employee not assigned to a specific packing cell
+  - AllocPay columns may all be 0 when allocation hasn't been applied
+  - A/B cells and C cell are at Sanger; Reedley is a separate facility
+  - Data refreshes weekly on Thursdays at 8am PST from UKG
+
+_sample_data:
+- EmployeeId: '5189'
+  CounterDate: '2025-10-01'
+  CostCenters2: 55 - PROCESSING- SANGER
+  PayrollJobTitle: Tomra Operator - Processing PM
+  DefaultCostCenters: TOMRA Operator
+  EmployeeName: Miguel Ochoa
+  Manager1Name: Greg Gillette (Cobblestone Fruit) (5266)
+  RegularHours: '8.00'
+  DailyOvertimeHours: '0.17'
+  WeeklyOvertimeHours: '0.00'
+  DoubleTimeHours: '0.00'
+  TotalHours: '8.17'
+  HourlyPay: '25.00'
+  RegularPay: '240.00'
+  OvertimePay: '7.23'
+  WeeklyOvertimePay: '0.00'
+  DoubleTimePay: '0.00'
+  TotalPay: '247.23'
+  first_seen_utc: '2025-12-16 17:30:00'
+  last_seen_utc: '2025-12-16 17:41:15'
+  last_updated_utc: '2025-12-16 17:41:15'
+  is_deleted: 'False'
+  CellArea: 'NULL'
+  AllocPay_ABCell: '0.0000'
+  AllocPay_CCell: '0.0000'
+  AllocPay_Reedley: '0.00'
+  AllocPay_Sanger: '0.00'
+  AllocPay_All: '0.00'

@@ -1,0 +1,193 @@
+# Schema documentation for rpt.vw_IC_REPACKING_OutputByRun
+# Repack output records aggregated by run
+
+name: rpt.vw_IC_REPACKING_OutputByRun
+short_name: vw_IC_REPACKING_OutputByRun
+schema: rpt
+domain: repacking
+system: LP
+
+description: |
+  Repack output records. Each row = one product output from a repack run,
+  attributed to a specific block and lot.
+
+  Shows what was PRODUCED from each run (cartons, bags, bins).
+  Use the Run Summary view for INPUT detail.
+
+business_purpose: |
+  - Track repack production output by run, product, and block
+  - Calculate carton/bag production volumes
+  - Analyze output by style (CTN, bags, bins)
+  - Support grower traceability (GABLOCKIDX links output to grower)
+
+row_count_approx: 113914
+refresh_frequency: "Real-time sync from LP system"
+
+columns:
+- name: ICRUNIDX
+  type: bigint
+  nullable: false
+  description: "Repack run index. Join to vw_IC_Repack_Run_Summary for input details."
+
+- name: RunDate
+  type: datetime
+  nullable: true
+  description: "Date the repack run was executed."
+
+- name: Output
+  type: decimal(38,6)
+  nullable: true
+  description: "Output quantity in product units (e.g., cartons, bags). 0 if no output for this row."
+
+- name: Output_Equiv
+  type: float
+  nullable: true
+  description: |
+    Output quantity converted to standard carton equivalents using EquivFactor.
+    Formula: Output * EquivFactor.
+    USE THIS for standardized volume reporting.
+
+- name: GABLOCKIDX
+  type: bigint
+  nullable: true
+  description: "Grower Accounting block index. Links output to the grower's orchard block. 0 = unattributed."
+
+- name: ProductIDX
+  type: bigint
+  nullable: true
+  description: "Output product index. Join to VW_PRODUCTS for full product details."
+
+- name: Warehouse
+  type: varchar(255)
+  nullable: true
+  description: "Warehouse where the run occurred (e.g., 'COBBLESTONE SANGER')."
+
+- name: GALOTIDX
+  type: bigint
+  nullable: true
+  description: "Grower Accounting lot index. Join to VW_LP_LOTS for pool/lot code. 0 = unattributed."
+
+- name: Style
+  type: nvarchar(50)
+  nullable: true
+  description: |
+    Output pack style. Determines which equipment line the run uses.
+    Style codes contain a suffix indicating bag type:
+    - FB = Film Bags (e.g., '9-3# FB', '8-3lb BAG FB')
+    - CB = Combo Bags
+    - NB = Net Bags
+    - WM = Wicketed Mesh Bags
+    - HD = Header Bags
+    - All others = Bulk (e.g., 'CTN', 'BIN')
+    Key values: 'CTN' (standard cartons, most common), 'BIN' (carton-to-bin return).
+
+- name: EquivFactor
+  type: float
+  nullable: true
+  description: |
+    Standard carton equivalent factor for this output product.
+    1.0 = standard carton, 0.742 = sub-standard pack (9-3# bags), etc.
+    Multiply by Output to get Output_Equiv.
+
+relationships:
+  - target: rpt.vw_IC_Repack_Run_Summary
+    join_column: ICRUNIDX
+    target_column: ICRUNIDX
+    cardinality: many-to-many
+    note: "Link outputs to run input details"
+
+  - target: dbo.VW_PRODUCTS
+    join_column: ProductIDX
+    target_column: ProductIdx
+    cardinality: many-to-one
+    note: "Output product details"
+
+  - target: dbo.VW_LP_LOTS
+    join_column: GALOTIDX
+    target_column: GALOTIDX
+    cardinality: many-to-one
+    note: "Pool/lot code for grower accounting"
+
+  - target: dbo.VW_BLOCKS
+    join_column: GABLOCKIDX
+    target_column: GABLOCKIDX
+    cardinality: many-to-one
+    note: "Block traceability for grower attribution"
+
+common_filters:
+  - column: RunDate
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days"
+
+  - column: Output
+    operation: "> 0"
+    description: "Rows with actual output"
+
+  - column: Style
+    operation: "= 'CTN'"
+    description: "Standard carton output only"
+
+sample_queries:
+  - description: "Daily repack production by style"
+    sql: |
+      SELECT
+        CAST(RunDate AS DATE) as RunDate,
+        Style,
+        SUM(Output) as TotalUnits,
+        SUM(Output_Equiv) as TotalStdCartons
+      FROM rpt.vw_IC_REPACKING_OutputByRun
+      WHERE RunDate >= DATEADD(day, -30, GETDATE())
+        AND Output > 0
+      GROUP BY CAST(RunDate AS DATE), Style
+      ORDER BY RunDate DESC, TotalStdCartons DESC
+
+  - description: "Repack output by pool/lot"
+    sql: |
+      SELECT
+        l.ID as PoolCode,
+        SUM(o.Output_Equiv) as TotalStdCartons
+      FROM rpt.vw_IC_REPACKING_OutputByRun o
+      JOIN dbo.VW_LP_LOTS l ON o.GALOTIDX = l.GALOTIDX
+      WHERE o.RunDate >= DATEADD(day, -7, GETDATE())
+        AND o.Output > 0
+      GROUP BY l.ID
+      ORDER BY TotalStdCartons DESC
+
+notes: |
+  - Output rows only - for inputs see vw_IC_Repack_Run_Summary
+  - Output = 0 rows exist (no-output records) - filter to Output > 0 for production reporting
+  - GABLOCKIDX = 0 means output not attributed to a specific block
+  - GALOTIDX = 0 means output not attributed to a specific lot/pool
+  - EquivFactor converts non-standard packs to standard carton equivalents
+
+_sample_data:
+- ICRUNIDX: '703806'
+  RunDate: '2025-09-24 00:00:00'
+  Output: '0.000000'
+  Output_Equiv: '0.0'
+  GABLOCKIDX: '0'
+  ProductIDX: '131795'
+  Warehouse: COBBLESTONE SANGER
+  GALOTIDX: '0'
+  Style: CTN
+  EquivFactor: '1.0'
+- ICRUNIDX: '523747'
+  RunDate: '2024-07-25 00:00:00'
+  Output: '120.000000'
+  Output_Equiv: '89.03999999999999'
+  GABLOCKIDX: '1076'
+  ProductIDX: '370678'
+  Warehouse: COBBLESTONE SANGER
+  GALOTIDX: '8929'
+  Style: 9-3# FB
+  EquivFactor: '0.742'
+- ICRUNIDX: '777832'
+  RunDate: '2026-02-05 00:00:00'
+  Output: '108.000000'
+  Output_Equiv: '108.0'
+  GABLOCKIDX: '5483'
+  ProductIDX: '533224'
+  Warehouse: COBBLESTONE SANGER
+  GALOTIDX: '11404'
+  Style: CTN
+  EquivFactor: '1.0'

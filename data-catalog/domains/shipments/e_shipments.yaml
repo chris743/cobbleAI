@@ -1,0 +1,444 @@
+# Schema documentation for dbo.VW_E_SHIPMENTS
+# Detailed shipment transactions - LP system
+# NOTE: Prefer vw_Shipments_RS which adds IsDeleted flag
+
+name: dbo.VW_E_SHIPMENTS
+short_name: VW_E_SHIPMENTS
+schema: dbo
+domain: shipments
+system: LP
+
+description: |
+  Detailed shipment transactions flattened from header + line + product detail.
+  Each row = one product fill detail (a specific inventory tag used to fill an order line).
+
+  NOTE: Prefer vw_Shipments_RS for analysis - it's the same data with an IsDeleted flag.
+
+  Very large table (~554K rows). Contains full order, customer, product, pricing,
+  and grower traceability data in a single denormalized view.
+
+business_purpose: |
+  - Detailed shipment analysis with full traceability
+  - Customer shipment history
+  - Revenue and pricing detail
+  - Grower settlement data (GASETLAMT, GABLOCKIDX, GALOTIDX)
+  - Salesperson performance tracking
+
+row_count_approx: 554169
+refresh_frequency: "Real-time sync from LP system"
+
+columns:
+  # === HEADER (Order Level) ===
+  - name: Header_SourceDB
+    type: nvarchar(20)
+    nullable: true
+    description: "Source database for header record. Always 'LP'."
+
+  - name: ARTRXHDRIDX
+    type: int
+    nullable: true
+    description: "AR Transaction header index. Groups all lines for one order."
+
+  - name: SOURCEIDX
+    type: int
+    nullable: true
+    description: "Source index. Internal system reference."
+
+  - name: SONO
+    type: nvarchar(8)
+    nullable: true
+    description: "Sales order number (e.g., '420570'). Unique order identifier."
+
+  - name: CUSTPOREF
+    type: nvarchar(20)
+    nullable: true
+    description: "Customer PO reference number. Customer's purchase order ID."
+
+  - name: HOLDFLAG
+    type: varchar(1)
+    nullable: true
+    description: "'N' = not on hold, 'Y' = order on hold."
+
+  - name: SOStatusID
+    type: varchar(1)
+    nullable: true
+    description: "Status code. 'C' = closed/complete."
+
+  - name: SOStatus
+    type: nvarchar(100)
+    nullable: true
+    description: "Status description (e.g., 'Paid In Full', 'Open')."
+
+  - name: SOTypeID
+    type: varchar(1)
+    nullable: true
+    description: "Order type code. '2' = Sales."
+
+  - name: SOType
+    type: nvarchar(100)
+    nullable: true
+    description: "Order type description (e.g., 'Sales')."
+
+  - name: SaleTerms
+    type: nvarchar(100)
+    nullable: true
+    description: "Sale terms (e.g., '--FOB--')."
+
+  - name: CUSTNAMEIDX
+    type: int
+    nullable: true
+    description: "Customer name index (bill-to)."
+
+  - name: TOCUSTNAMEIDX
+    type: int
+    nullable: true
+    description: "Ship-to customer name index."
+
+  - name: Customer
+    type: nvarchar(40)
+    nullable: true
+    description: "Customer name (e.g., 'MCCARTNEY PRODUCE')."
+
+  - name: CustomerID
+    type: nvarchar(6)
+    nullable: true
+    description: "Customer ID code."
+
+  - name: TOCUSTLOCSEQ
+    type: int
+    nullable: true
+    description: "Ship-to customer location sequence."
+
+  - name: ShipToDesc
+    type: nvarchar(40)
+    nullable: true
+    description: "Ship-to description (e.g., 'PARIS, TN'). Destination city/state."
+
+  - name: SODATETIME
+    type: datetime2
+    nullable: true
+    description: "Sales order date."
+
+  - name: SHIPDATETIME
+    type: datetime2
+    nullable: true
+    description: "Ship date."
+
+  - name: INVOICEDATE
+    type: datetime2
+    nullable: true
+    description: "Invoice date."
+
+  - name: HeaderTimestamp
+    type: datetime2
+    nullable: true
+    description: "Header record timestamp."
+
+  - name: SALESPERSONNAMEIDX
+    type: int
+    nullable: true
+    description: "Salesperson name index."
+
+  - name: Salesperson
+    type: nvarchar(40)
+    nullable: true
+    description: "Salesperson name (e.g., 'ALEX MARRIOTT')."
+
+  - name: CARRIERNAMEIDX
+    type: int
+    nullable: true
+    description: "Carrier name index. 0 = no carrier specified."
+
+  - name: CarrierName
+    type: nvarchar(40)
+    nullable: true
+    description: "Carrier/freight company name."
+
+  # === LINE (Order Line Level) ===
+  - name: Line_SourceDB
+    type: nvarchar(20)
+    nullable: true
+    description: "Source database for line record."
+
+  - name: ARTRXLINETRXTYPE
+    type: varchar(1)
+    nullable: true
+    description: "Line transaction type."
+
+  - name: ARTRXLINESEQ
+    type: int
+    nullable: true
+    description: "Line sequence number within the header."
+
+  - name: LINENO
+    type: int
+    nullable: true
+    description: "Line number on the order."
+
+  - name: DELETEFLAG
+    type: varchar(1)
+    nullable: true
+    description: "'N' = active line, 'Y' = deleted line."
+
+  - name: LineProductIdx
+    type: int
+    nullable: true
+    description: "Product index for the order line."
+
+  - name: LINETYPE
+    type: varchar(1)
+    nullable: true
+    description: "Line type. '1' = standard product line."
+
+  - name: INVCDESCR
+    type: nvarchar(120)
+    nullable: true
+    description: "Invoice description for the line item."
+
+  - name: INVCDESCROVERRIDEFLAG
+    type: varchar(1)
+    nullable: true
+    description: "'Y' = description was manually overridden."
+
+  - name: CONSIGNFLAG
+    type: varchar(1)
+    nullable: true
+    description: "'Y' = consignment sale, 'N' = standard sale."
+
+  - name: PAYHOLDFLAG
+    type: varchar(1)
+    nullable: true
+    description: "'Y' = payment on hold."
+
+  - name: UOMIDX
+    type: int
+    nullable: true
+    description: "Unit of measure index."
+
+  - name: LineQnt
+    type: numeric(24,8)
+    nullable: true
+    description: "Order line quantity in product units."
+
+  - name: PRICE
+    type: numeric(24,8)
+    nullable: true
+    description: "Unit price."
+
+  - name: SALEPRICE
+    type: numeric(24,8)
+    nullable: true
+    description: "Sale price per unit (may differ from PRICE if adjustments applied)."
+
+  - name: SALEAMT
+    type: numeric(24,8)
+    nullable: true
+    description: "Total sale amount for this line."
+
+  - name: UNITSPERPALLET
+    type: int
+    nullable: true
+    description: "Units per pallet."
+
+  - name: GROUPARTRXLINESEQ
+    type: int
+    nullable: true
+    description: "Grouped line sequence."
+
+  - name: CONTRACTIDX
+    type: int
+    nullable: true
+    description: "Contract index. 0 = no contract."
+
+  - name: ARSOLINESEQ
+    type: int
+    nullable: true
+    description: "AR sales order line sequence."
+
+  - name: LineTimestamp
+    type: datetime2
+    nullable: true
+    description: "Line record timestamp."
+
+  # === PRODUCT DETAIL (Fill Level) ===
+  - name: Product_SourceDB
+    type: nvarchar(20)
+    nullable: true
+    description: "Source database for product detail."
+
+  - name: ARTRXDTLSEQ
+    type: int
+    nullable: true
+    description: "Detail sequence number."
+
+  - name: ProductLineTrxType
+    type: nvarchar(2)
+    nullable: true
+    description: "Product detail transaction type."
+
+  - name: ProductLineSeq
+    type: int
+    nullable: true
+    description: "Product line sequence."
+
+  - name: TRXTYPE
+    type: nvarchar(2)
+    nullable: true
+    description: "Transaction type code."
+
+  - name: FILLTYPE
+    type: nvarchar(1)
+    nullable: true
+    description: "Fill type. '2' = standard fill."
+
+  - name: INVENTORYIDX
+    type: int
+    nullable: true
+    description: "Inventory record index. Links to specific inventory tag used."
+
+  - name: ProductProductIdx
+    type: int
+    nullable: true
+    description: "Product index at the fill level. Join to VW_PRODUCTS."
+
+  - name: GABLOCKIDX
+    type: int
+    nullable: true
+    description: "Grower Accounting block index. Traces shipment back to grower block."
+
+  - name: ICQNT
+    type: float
+    nullable: true
+    description: "Inventory control quantity at fill level."
+
+  - name: ProductQnt
+    type: float
+    nullable: true
+    description: "Product quantity at fill level. Usually matches ICQNT."
+
+  - name: GASETLAMT
+    type: numeric(19,6)
+    nullable: true
+    description: "Grower Accounting settlement amount. Revenue allocated back to grower for this fill."
+
+  - name: ProductTimestamp
+    type: datetime2
+    nullable: true
+    description: "Product detail timestamp."
+
+  - name: GlDeleteCode
+    type: nvarchar(1)
+    nullable: true
+    description: "'N' = active, 'Y' = deleted."
+
+  - name: TAGIDX
+    type: int
+    nullable: true
+    description: "Tag index. Specific inventory tag used to fill this line."
+
+  - name: WAREHOUSEIDX
+    type: int
+    nullable: true
+    description: "Warehouse index."
+
+  - name: GALOTIDX
+    type: int
+    nullable: true
+    description: "Grower Accounting lot index. Join to VW_LP_LOTS for pool/lot code."
+
+  - name: RECEIVEDATE
+    type: datetime2
+    nullable: true
+    description: "Receive date of the inventory tag used."
+
+  - name: POOLIDX
+    type: int
+    nullable: true
+    description: "Pool index (CF reference). May differ from GALOTIDX."
+
+  - name: TAG_ID
+    type: nvarchar(50)
+    nullable: true
+    description: "Physical tag ID string."
+
+  - name: EQUIVFACTOR
+    type: float
+    nullable: true
+    description: "Standard carton equivalent factor for this product."
+
+  - name: EQUIV_QNT
+    type: float
+    nullable: true
+    description: "Equivalent quantity. ICQNT * EQUIVFACTOR."
+
+  - name: FinalEquivQty
+    type: float
+    nullable: true
+    description: "Final adjusted equivalent quantity. USE THIS for reporting."
+
+relationships:
+  - target: dbo.VW_PRODUCTS
+    join_column: ProductProductIdx
+    target_column: ProductIdx
+    cardinality: many-to-one
+    note: "Product details at fill level"
+
+  - target: dbo.VW_LP_LOTS
+    join_column: GALOTIDX
+    target_column: GALOTIDX
+    cardinality: many-to-one
+    note: "Pool/lot code lookup"
+
+  - target: dbo.VW_BLOCKS
+    join_column: GABLOCKIDX
+    target_column: GABLOCKIDX
+    cardinality: many-to-one
+    note: "Block traceability to grower"
+
+common_filters:
+  - column: SHIPDATETIME
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days shipped"
+
+  - column: DELETEFLAG
+    operation: "= 'N'"
+    description: "Non-deleted lines"
+
+  - column: GlDeleteCode
+    operation: "= 'N'"
+    description: "Non-deleted product detail"
+
+sample_queries:
+  - description: "Use vw_Shipments_RS instead (has IsDeleted flag)"
+    sql: |
+      -- Prefer rpt.vw_Shipments_RS for all shipment analysis
+      SELECT SONO, Customer, SHIPDATETIME, INVCDESCR,
+        LineQnt, SALEAMT, FinalEquivQty
+      FROM rpt.vw_Shipments_RS
+      WHERE IsDeleted = 0
+        AND SHIPDATETIME >= DATEADD(day, -30, GETDATE())
+
+notes: |
+  - PREFER vw_Shipments_RS (adds IsDeleted flag)
+  - Very large table (~554K rows) - always filter by date
+  - Flattened 3-level hierarchy: one row per product fill detail
+  - Multiple rows per order line (each inventory tag that filled it)
+  - LineQnt is order-level; ICQNT/ProductQnt is fill-level
+  - Use FinalEquivQty for standardized volume reporting
+  - GASETLAMT is the grower's settlement share for this fill
+
+_sample_data:
+- Header_SourceDB: LP
+  SONO: '420570'
+  SOStatus: Paid In Full
+  SOType: Sales
+  Customer: MCCARTNEY PRODUCE
+  SHIPDATETIME: '2025-12-08 00:00:00'
+  Salesperson: ALEX MARRIOTT
+  LineQnt: '770.00000000'
+  SALEAMT: '13706.00000000'
+  INVCDESCR: MANDARIN 8-3lb BAG FB 04B FANCY FB POPPIES PROD OF
+  ICQNT: '60.0'
+  GALOTIDX: '11536'
+  EQUIVFACTOR: '0.96'
+  FinalEquivQty: '57.599999999999994'

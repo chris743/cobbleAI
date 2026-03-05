@@ -1,0 +1,257 @@
+# Schema documentation for dbo.vw_Portal_BinsReceived_ByBlock
+# Pre-aggregated receiving summary by block - Cobblestone system (grower portal)
+
+name: dbo.vw_Portal_BinsReceived_ByBlock
+short_name: vw_Portal_BinsReceived_ByBlock
+schema: dbo
+domain: inventory
+system: Cobblestone
+
+description: |
+  Pre-aggregated receiving summary by orchard block. One row per block.
+  Designed for grower portal display - shows receiving totals, estimates, and remaining bins.
+
+  This is Cobblestone (CF) system data - source_database is always 'COBBLESTONE'.
+  Fiscal year runs October 1 - September 30 (aligned with citrus season).
+
+business_purpose: |
+  - Grower-facing portal: show each block's receiving status at a glance
+  - Compare actual bins received vs estimated bins (season progress tracking)
+  - Show recent activity (last 30 days) and full season totals
+  - Support harvest planning by showing estimated remaining production
+
+row_count_approx: 1117
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: source_database
+  type: nvarchar(20)
+  nullable: false
+  description: "Always 'COBBLESTONE' for this view."
+
+- name: GrowerID
+  type: nvarchar(6)
+  nullable: false
+  description: "Grower ID code (e.g., '2001'). Matches GrowerID in VW_BLOCKS and VW_BINSRECEIVED."
+
+- name: GrowerName
+  type: nvarchar(40)
+  nullable: false
+  description: "Grower name (e.g., 'ARLIS VALENTINE', 'COBBLESTONE FRUIT')."
+
+- name: GABLOCKIDX
+  type: int
+  nullable: false
+  description: "Grower Accounting block index. Join to VW_BLOCKS on GABLOCKIDX for full block details."
+
+- name: BlockID
+  type: nvarchar(12)
+  nullable: false
+  description: "Block ID string (e.g., '2001102'). Format: [GrowerID][BlockSequence]."
+
+- name: BlockName
+  type: nvarchar(40)
+  nullable: false
+  description: "Block name (e.g., 'ARLIS VALENTINE - FUK'). Contains grower + block description."
+
+- name: CMTYIDX
+  type: int
+  nullable: false
+  description: "Cobblestone commodity index. Join to VW_CF_COMMODITIES on commodityidx."
+
+- name: CommodityName
+  type: varchar(100)
+  nullable: false
+  description: "Commodity name (e.g., 'NAVEL', 'MANDARIN'). Denormalized from CF commodity master."
+
+- name: VARIETYIDX
+  type: int
+  nullable: false
+  description: "Variety index. Join to Ref.vw_CommodityVariety for variety details."
+
+- name: VarietyName
+  type: varchar(100)
+  nullable: false
+  description: "Variety name (e.g., 'FUKUMOTO', 'TANGO'). May be empty if variety not specified."
+
+- name: EstimatedBins
+  type: decimal(18,4)
+  nullable: true
+  description: |
+    Estimated total bins for this block for the current fiscal year (Oct 1 - Sep 30).
+    Set during pre-season planning. Null if no estimate exists for this block.
+
+- name: LastReceivedDate
+  type: date
+  nullable: true
+  description: "Date of the most recent receiving ticket for this block. Null if no bins received."
+
+- name: LastReceivedQty
+  type: decimal(38,4)
+  nullable: true
+  description: "Quantity (bins) from the most recent receiving ticket for this block."
+
+- name: Bins_Last30
+  type: decimal(38,4)
+  nullable: true
+  description: "Total bins received from this block in the last 30 days. Rolling window."
+
+- name: Bins_FYTD
+  type: decimal(38,4)
+  nullable: true
+  description: |
+    Bins received fiscal-year-to-date (Oct 1 through today).
+    This is the cumulative receiving total for the current season.
+
+- name: Bins_PriorFYTD
+  type: decimal(38,4)
+  nullable: true
+  description: |
+    Bins received in the prior fiscal year to the same relative date.
+    Enables year-over-year comparison of receiving pace.
+
+- name: EstimatedBinsRemaining_FY
+  type: decimal(38,4)
+  nullable: true
+  description: |
+    Estimated bins remaining to be received this fiscal year.
+    Formula: EstimatedBins - Bins_FYTD.
+    Can be negative if actual exceeds estimate.
+
+- name: EstimatedBinsRemaining_FY_Clamped
+  type: decimal(38,4)
+  nullable: true
+  description: |
+    Estimated bins remaining, clamped to zero minimum.
+    Same as EstimatedBinsRemaining_FY but negative values are set to 0.
+    Use this for forecasting where negative remaining doesn't make sense.
+
+relationships:
+  - target: dbo.VW_BLOCKS
+    join_column: GABLOCKIDX
+    target_column: GABLOCKIDX
+    cardinality: one-to-one
+    note: "Full block master data (acres, grower details, inactive flag)"
+
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CMTYIDX
+    target_column: commodityidx
+    cardinality: many-to-one
+    note: "CF commodity details"
+
+common_filters:
+  - column: GrowerID
+    operation: "= '2001'"
+    description: "Filter to specific grower"
+
+  - column: CommodityName
+    operation: "= 'NAVEL'"
+    description: "Filter to specific commodity"
+
+  - column: Bins_FYTD
+    operation: "> 0"
+    description: "Only blocks with receiving activity this season"
+
+  - column: EstimatedBinsRemaining_FY_Clamped
+    operation: "> 0"
+    description: "Blocks with remaining estimated production"
+
+sample_queries:
+  - description: "Season progress by block for a grower"
+    sql: |
+      SELECT
+        BlockName,
+        CommodityName,
+        VarietyName,
+        EstimatedBins,
+        Bins_FYTD,
+        EstimatedBinsRemaining_FY_Clamped as RemainingEst,
+        LastReceivedDate
+      FROM dbo.vw_Portal_BinsReceived_ByBlock
+      WHERE GrowerID = '2001'
+      ORDER BY CommodityName, BlockName
+
+  - description: "Year-over-year receiving comparison by commodity"
+    sql: |
+      SELECT
+        CommodityName,
+        SUM(Bins_FYTD) as CurrentFYTD,
+        SUM(Bins_PriorFYTD) as PriorFYTD,
+        SUM(EstimatedBins) as TotalEstimated
+      FROM dbo.vw_Portal_BinsReceived_ByBlock
+      GROUP BY CommodityName
+      ORDER BY CurrentFYTD DESC
+
+  - description: "Blocks with recent activity (last 30 days)"
+    sql: |
+      SELECT
+        GrowerName,
+        BlockName,
+        CommodityName,
+        Bins_Last30,
+        Bins_FYTD,
+        LastReceivedDate
+      FROM dbo.vw_Portal_BinsReceived_ByBlock
+      WHERE Bins_Last30 > 0
+      ORDER BY Bins_Last30 DESC
+
+notes: |
+  - This view is PRE-AGGREGATED - one row per block. No need to GROUP BY.
+  - Fiscal year = Oct 1 - Sep 30 (citrus season).
+  - All data is Cobblestone system - join to CF tables only.
+  - EstimatedBins can be null if no estimate was set for the block.
+  - Bins_PriorFYTD enables year-over-year pacing comparison.
+  - Use EstimatedBinsRemaining_FY_Clamped (not the unclamped version) for forecasting.
+  - For the extended version with BlockStatus, use vw_Portal_BinsReceived_ByBlock_A.
+
+_sample_data:
+- source_database: COBBLESTONE
+  GrowerID: '001'
+  GrowerName: COBBLESTONE FRUIT
+  GABLOCKIDX: '705'
+  BlockID: 001008
+  BlockName: CF - MANDARINS - DUMMY INVENTORY
+  CMTYIDX: '5'
+  CommodityName: MANDARIN
+  VARIETYIDX: '0'
+  VarietyName: ''
+  LastReceivedQty: '0.0000'
+  Bins_Last30: '0.0000'
+  Bins_FYTD: '0.0000'
+  Bins_PriorFYTD: '0.0000'
+- source_database: COBBLESTONE
+  GrowerID: '2001'
+  GrowerName: ARLIS VALENTINE
+  GABLOCKIDX: '108'
+  BlockID: '2001102'
+  BlockName: ARLIS VALENTINE - FUK
+  CMTYIDX: '1'
+  CommodityName: NAVEL
+  VARIETYIDX: '7'
+  VarietyName: FUKUMOTO
+  EstimatedBins: '217.0000'
+  LastReceivedDate: '2025-10-28'
+  LastReceivedQty: '217.0000'
+  Bins_Last30: '0.0000'
+  Bins_FYTD: '217.0000'
+  Bins_PriorFYTD: '0.0000'
+  EstimatedBinsRemaining_FY: '0.0000'
+  EstimatedBinsRemaining_FY_Clamped: '0.0000'
+- source_database: COBBLESTONE
+  GrowerID: '2001'
+  GrowerName: ARLIS VALENTINE
+  GABLOCKIDX: '109'
+  BlockID: '2001103'
+  BlockName: ARLIS VALENTINE - TANGO
+  CMTYIDX: '5'
+  CommodityName: MANDARIN
+  VARIETYIDX: '31'
+  VarietyName: TANGO
+  EstimatedBins: '422.0000'
+  LastReceivedDate: '2026-01-20'
+  LastReceivedQty: '18.0000'
+  Bins_Last30: '0.0000'
+  Bins_FYTD: '422.0000'
+  Bins_PriorFYTD: '0.0000'
+  EstimatedBinsRemaining_FY: '0.0000'
+  EstimatedBinsRemaining_FY_Clamped: '0.0000'

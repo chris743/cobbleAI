@@ -1,0 +1,34 @@
+domain: other
+description: |
+  Cross-system reference/lookup tables for commodities.
+  Contains commodity master data for BOTH source systems (Cobblestone and LP).
+
+  CRITICAL: These tables have the same column names but DIFFERENT idx values.
+  - VW_CF_COMMODITIES: Cobblestone commodity lookup (for receiving/grower data)
+  - VW_LP_COMMODITIES: LP commodity lookup (for inventory/sales/shipping data)
+
+  Never join CF commodity idx to LP data or vice versa.
+
+views:
+- name: dbo.VW_CF_COMMODITIES
+  system: Cobblestone
+  description: "Cobblestone commodity reference. Join to receiving, blocks, and grower data."
+  use_for:
+    - Commodity lookup for CF/Cobblestone tables
+    - VW_BINSRECEIVED, VW_BLOCKS, portal views
+
+- name: dbo.VW_LP_COMMODITIES
+  system: LP
+  description: "LP commodity reference. Join to inventory, sales, and shipment data."
+  use_for:
+    - Commodity lookup for LP tables
+    - VW_BININVENTORY, VW_LPSALESORDERS, VW_E_SHIPMENTS
+
+key_concepts:
+  - name: Dual Commodity Tables
+    description: |
+      CommodityIDx 1 in CF (NAVEL) may or may not match CommodityIDx 1 in LP.
+      Always use the correct table for your source system.
+      CF has ~11 commodities, LP has ~44 (LP has more granular commodity definitions).
+
+common_joins: []

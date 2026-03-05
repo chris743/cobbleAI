@@ -1,0 +1,201 @@
+# Inventory Domain
+# Tracks fruit from field receipt through warehouse storage
+
+domain: inventory
+
+description: |
+  Tracks fruit inventory from field receipt through warehouse storage.
+  Covers bin receiving, current bin positions, grower/block traceability, and inventory snapshots.
+  
+  IMPORTANT: This domain spans BOTH source systems:
+  - Receiving/grower data = Cobblestone (CF)
+  - Processed bin inventory = LP
+  
+  See system_architecture.yaml for CF/LP join rules.
+  
+  Inventory units in this domain are BINS (not cartons).
+  1 bin = 23.2 standard cartons (40lb std) or 37.5 cartons for mandarins (25lb std).
+  For finished goods (cartons/pallets), see the finished_goods domain (when available).
+
+  Fiscal year runs October 1 - September 30, aligned with the citrus harvest season.
+  FYTD = fiscal year to date. Portal views use this fiscal year for receiving comparisons.
+
+views:
+  # LP System - Processed Inventory
+  - name: dbo.VW_BININVENTORY
+    system: LP
+    description: |
+      Current processed bin inventory. Each row = one bin of single commodity/size/grade.
+      This is the primary inventory table for "what's in the warehouse right now."
+    use_for:
+      - Current inventory queries
+      - Inventory by commodity/size/grade/pool
+    joins_to:
+      - table: dbo.VW_LP_COMMODITIES
+        on: commodityidx
+      - table: dbo.VW_LP_LOTS
+        on: lotidx
+        note: "lotidx usually contains pool values for domestic fruit"
+
+  - name: dbo.BININVSNAPSHOTS_EXT
+    system: LP
+    description: |
+      Point-in-time inventory snapshots. Use for historical inventory levels and trend analysis.
+    use_for:
+      - Inventory history
+      - Trend analysis
+      - "What did inventory look like on [date]?"
+
+  # Cobblestone System - Receiving & Grower Data
+  - name: dbo.VW_BINSRECEIVED
+    system: Cobblestone
+    description: |
+      Bulk bins received from growers. Tracks inbound field bins before processing.
+      Links to grower, block, and pool for settlement tracking.
+    use_for:
+      - Receiving reports
+      - Grower delivery history
+      - Pool intake tracking
+    joins_to:
+      - table: dbo.VW_BLOCKS
+        on: blockidx
+      - table: dbo.VW_CF_COMMODITIES
+        on: commodityidx
+      - table: dbo.VW_CF_POOLS
+        on: poolidx
+
+  - name: dbo.VW_BLOCKS
+    system: Cobblestone
+    description: |
+      Orchard block master data. A block is a specific section of a grower's orchard.
+      Used for traceability and grower performance analysis.
+    use_for:
+      - Block lookup
+      - Grower orchard details
+    joins_to:
+      - table: grower tables
+        on: groweridx
+
+  # Portal Views - Grower-Facing Summaries
+  - name: dbo.vw_Portal_BinsReceived_ByBlock
+    system: Cobblestone
+    description: |
+      Summarized receiving data by block. Designed for grower portal display.
+      Pre-aggregated for performance.
+    use_for:
+      - Grower-facing reports
+      - Block-level receiving summaries
+
+  - name: dbo.vw_Portal_BinsReceived_ByBlock_A
+    system: Cobblestone
+    description: |
+      Alternate/extended block receiving summary. Check columns for differences from ByBlock.
+    use_for:
+      - Grower-facing reports (alternate format)
+
+  - name: dbo.vw_Portal_BinsReceived_ByGrower
+    system: Cobblestone
+    description: |
+      Summarized receiving data by grower. Pre-aggregated totals across all blocks.
+    use_for:
+      - Grower-level receiving totals
+      - "How much has [grower] delivered this season?"
+
+key_concepts:
+
+  - name: Current Inventory (LP)
+    description: |
+      Use VW_BININVENTORY for current processed bin positions.
+      Join to VW_LP_COMMODITIES on commodityidx for commodity details.
+      Join to VW_LP_LOTS on lotidx for pool/lot details.
+
+  - name: Inventory History (LP)
+    description: |
+      Use BININVSNAPSHOTS_EXT for point-in-time inventory levels.
+      Query by snapshot date for historical analysis.
+
+  - name: Receiving (Cobblestone)
+    description: |
+      VW_BINSRECEIVED tracks inbound bulk/field bins from growers.
+      This is Cobblestone data - join to CF tables (VW_CF_COMMODITIES, VW_CF_POOLS).
+      VW_ALLRECEIVINGS (in receiving domain) has additional receiving detail.
+
+  - name: Traceability
+    description: |
+      Fruit traces: grower → block → receiving ticket → pool.
+      All in Cobblestone system.
+      After packing entry, inventory is in LP linked by lotidx (which contains pool ID).
+
+common_joins:
+
+  # LP Inventory Joins
+  - description: "Inventory to commodity details"
+    sql: |
+      SELECT i.*, c.CommodityName
+      FROM dbo.VW_BININVENTORY i
+      JOIN dbo.VW_LP_COMMODITIES c ON i.commodityidx = c.commodityidx
+
+  - description: "Inventory to pool/lot details"
+    sql: |
+      SELECT i.*, l.* 
+      FROM dbo.VW_BININVENTORY i
+      JOIN dbo.VW_LP_LOTS l ON i.lotidx = l.lotidx
+    note: "lotidx in LP typically contains pool values for domestic fruit"
+
+  # Cobblestone Receiving Joins
+  - description: "Bins received to block details"
+    sql: |
+      SELECT br.*, b.BlockName
+      FROM dbo.VW_BINSRECEIVED br
+      JOIN dbo.VW_BLOCKS b ON br.blockidx = b.blockidx
+
+  - description: "Bins received to commodity (CF)"
+    sql: |
+      SELECT br.*, c.CommodityName
+      FROM dbo.VW_BINSRECEIVED br
+      JOIN dbo.VW_CF_COMMODITIES c ON br.commodityidx = c.commodityidx
+
+  - description: "Bins received to pool"
+    sql: |
+      SELECT br.*, p.*
+      FROM dbo.VW_BINSRECEIVED br
+      JOIN dbo.VW_CF_POOLS p ON br.poolidx = p.poolidx
+
+common_questions:
+
+  # Inventory Questions (LP)
+  - question: "How many bins of [commodity] [size] [grade] are in inventory?"
+    approach: |
+      Query VW_BININVENTORY, filter by commodity/size/grade columns.
+      Join to VW_LP_COMMODITIES on commodityidx if you need commodity name.
+    
+  - question: "What's our inventory by pool?"
+    approach: |
+      Query VW_BININVENTORY grouped by lotidx.
+      Join to VW_LP_LOTS on lotidx for pool details.
+      Remember: lotidx contains pool values in LP.
+
+  - question: "What's the inventory trend over the last 30 days?"
+    approach: |
+      Query BININVSNAPSHOTS_EXT filtered to last 30 days.
+      Group by snapshot date and commodity/size/grade as needed.
+
+  # Receiving Questions (Cobblestone)
+  - question: "What did we receive from [grower] this week?"
+    approach: |
+      Query VW_BINSRECEIVED or vw_Portal_BinsReceived_ByGrower.
+      Filter by groweridx and date range.
+      These are Cobblestone tables - use CF joins.
+
+  - question: "Show me receiving by block for [grower]"
+    approach: |
+      Query vw_Portal_BinsReceived_ByBlock filtered by groweridx.
+      Or join VW_BINSRECEIVED to VW_BLOCKS on blockidx.
+
+warnings:
+  - |
+    DO NOT join VW_BININVENTORY (LP) to VW_CF_COMMODITIES (Cobblestone).
+    The commodityidx values are different between systems.
+  - |
+    When querying pools in LP inventory, use lotidx NOT poolidx.
+    The poolidx column may not exist or may be null in LP tables.

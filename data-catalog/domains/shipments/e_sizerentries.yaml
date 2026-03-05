@@ -1,0 +1,208 @@
+# Schema documentation for dbo.VW_E_SizerEntries
+# Sizer/grader packing line entries - LP system
+
+name: dbo.VW_E_SizerEntries
+short_name: VW_E_SizerEntries
+schema: dbo
+domain: shipments
+system: LP
+
+description: |
+  Sizer/grader entries from packing line equipment (Tomra, Aweta, etc.).
+  Each row = one size/grade output from a packing run, linked to a pool and block.
+
+  This is the raw packing line output data - what the grading equipment produced.
+  DELETECODE indicates whether the entry is active ('N'), deleted ('Y'), or reversed ('R').
+
+business_purpose: |
+  - Track packing line sizer/grader throughput
+  - Analyze size and grade distribution from grading equipment
+  - Support packout calculations at the run level
+  - Trace graded output back to pool and grower block
+
+row_count_approx: 214198
+refresh_frequency: "Real-time sync from LP system"
+
+columns:
+- name: PKHDRIDX
+  type: int
+  nullable: false
+  description: "Pack header index. Groups entries from one packing session."
+
+- name: PKSEQ
+  type: int
+  nullable: false
+  description: "Pack sequence within the header."
+
+- name: POOLIDX
+  type: int
+  nullable: true
+  description: "Pool index (CF system). Links to VW_CF_POOLS on POOLIDX."
+
+- name: GABLOCKIDX
+  type: int
+  nullable: true
+  description: "Grower Accounting block index. Links to VW_BLOCKS."
+
+- name: GALOTIDX
+  type: int
+  nullable: true
+  description: "Grower Accounting lot index. Join to VW_LP_LOTS."
+
+- name: ICRUNIDX
+  type: int
+  nullable: true
+  description: "IC run index. Links to repack run data."
+
+- name: PRODUCTIDX
+  type: int
+  nullable: true
+  description: "Product index for the output product. Join to VW_PRODUCTS."
+
+- name: USERIDX
+  type: int
+  nullable: true
+  description: "User/operator index. Who ran the sizer."
+
+- name: TIMESTAMP
+  type: datetime2
+  nullable: true
+  description: "Timestamp when this entry was recorded by the sizer."
+
+- name: DELETECODE
+  type: char(1)
+  nullable: true
+  description: |
+    Delete/status code:
+    - 'N' = active/normal entry
+    - 'Y' = deleted entry
+    - 'R' = reversed entry (negative ICQNT to undo a previous entry)
+
+- name: ICQNT
+  type: numeric(18,6)
+  nullable: true
+  description: |
+    IC quantity (cartons). Positive = production, negative = reversal.
+    This is the carton count output by the sizer for this product.
+
+- name: PACKOUTDATE
+  type: datetime2
+  nullable: true
+  description: "Packout date. The business date for this packing run."
+
+- name: CmtyIdx
+  type: int
+  nullable: true
+  description: "LP commodity index."
+
+- name: Prod_Com
+  type: nvarchar(50)
+  nullable: true
+  description: "Product commodity name from product master."
+
+- name: Bin_Com
+  type: nchar(50)
+  nullable: true
+  description: "Bin commodity name (may have trailing spaces due to nchar type)."
+
+- name: CtnsPerBin
+  type: float
+  nullable: true
+  description: "Cartons per bin conversion factor (e.g., 23.2 for citrus)."
+
+- name: BinsQnt
+  type: float
+  nullable: true
+  description: "Bin equivalent quantity. ICQNT / CtnsPerBin. Can be negative for reversals."
+
+- name: Grade
+  type: nvarchar(50)
+  nullable: true
+  description: "Quality grade of the output (e.g., 'FANCY', 'CHOICE')."
+
+relationships:
+  - target: dbo.VW_PRODUCTS
+    join_column: PRODUCTIDX
+    target_column: ProductIdx
+    cardinality: many-to-one
+    note: "Output product details"
+
+  - target: dbo.VW_CF_POOLS
+    join_column: POOLIDX
+    target_column: POOLIDX
+    cardinality: many-to-one
+    note: "Pool lookup (CF system)"
+
+  - target: dbo.VW_BLOCKS
+    join_column: GABLOCKIDX
+    target_column: GABLOCKIDX
+    cardinality: many-to-one
+    note: "Block traceability"
+
+common_filters:
+  - column: DELETECODE
+    operation: "= 'N'"
+    description: "Active entries only (exclude deleted and reversed)"
+
+  - column: PACKOUTDATE
+    operation: ">= DATEADD(day, -14, GETDATE())"
+    description: "Last 14 days (matching packout rolling window)"
+
+  - column: ICQNT
+    operation: "> 0"
+    description: "Positive production only (exclude reversals)"
+
+sample_queries:
+  - description: "Daily sizer output by commodity and grade"
+    sql: |
+      SELECT
+        CAST(PACKOUTDATE AS DATE) as PackDate,
+        Prod_Com as Commodity,
+        Grade,
+        SUM(ICQNT) as TotalCartons,
+        SUM(BinsQnt) as TotalBins
+      FROM dbo.VW_E_SizerEntries
+      WHERE DELETECODE = 'N'
+        AND PACKOUTDATE >= DATEADD(day, -14, GETDATE())
+      GROUP BY CAST(PACKOUTDATE AS DATE), Prod_Com, Grade
+      ORDER BY PackDate DESC, TotalCartons DESC
+
+  - description: "Sizer output by pool"
+    sql: |
+      SELECT
+        p.ID as PoolCode,
+        SUM(s.ICQNT) as Cartons,
+        SUM(s.BinsQnt) as Bins
+      FROM dbo.VW_E_SizerEntries s
+      JOIN dbo.VW_CF_POOLS p ON s.POOLIDX = p.POOLIDX
+      WHERE s.DELETECODE = 'N'
+        AND s.PACKOUTDATE >= DATEADD(day, -14, GETDATE())
+      GROUP BY p.ID
+      ORDER BY Bins DESC
+
+notes: |
+  - Filter DELETECODE = 'N' for active entries
+  - DELETECODE = 'R' entries have negative ICQNT (reversals)
+  - Bin_Com has trailing spaces (nchar type) - use RTRIM() or Prod_Com instead
+  - POOLIDX here is a CF pool reference (not LP lotidx)
+  - BinsQnt = ICQNT / CtnsPerBin (carton-to-bin conversion)
+  - Large table (~214K rows) - always filter by PACKOUTDATE
+
+_sample_data:
+- PKHDRIDX: '3913'
+  PKSEQ: '37'
+  POOLIDX: '127'
+  GABLOCKIDX: '864'
+  ICRUNIDX: '5908'
+  PRODUCTIDX: '2438'
+  USERIDX: '604'
+  TIMESTAMP: '2025-11-03 07:44:00'
+  DELETECODE: R
+  ICQNT: '-1141.000000'
+  PACKOUTDATE: '2025-10-28 00:00:00'
+  CmtyIdx: '4'
+  Prod_Com: LEMON
+  Bin_Com: 'LEMON                                             '
+  CtnsPerBin: '23.2'
+  BinsQnt: '-49.18'
+  Grade: FANCY

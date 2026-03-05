@@ -1,0 +1,162 @@
+# Schema documentation for dbo.VW_14DAYAVGPACKOUT_EXT
+# Extended 14-day average packout with product detail and bin allocation
+
+name: dbo.VW_14DAYAVGPACKOUT_EXT
+short_name: VW_14DAYAVGPACKOUT_EXT
+schema: dbo
+domain: packout
+system: Cobblestone
+
+description: |
+  Extended version of VW_14DAYAVGPACKOUT with additional product details,
+  total bins processed, and pro-rata bulk bin allocation per size/grade.
+
+  Same grain as the base view (one row per commodity/size/grade) but adds:
+  - ProductIdx and Style from product master
+  - TtlBins: total bins processed in the 14-day window
+  - ProRataBulkBins: allocated bulk bins for this size/grade combination
+
+business_purpose: |
+  - Packout reporting with product-level detail
+  - Allocate bulk bin volumes proportionally across size/grade buckets
+  - Support grower settlement calculations (how many bins of each grade)
+  - Bin-level packout for operational planning
+
+row_count_approx: 113
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: Commodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Commodity name (e.g., 'NAVEL'). CF commodity name."
+
+- name: CmtyIdx
+  type: int
+  nullable: true
+  description: "Cobblestone commodity index."
+
+- name: SizeName
+  type: nvarchar(50)
+  nullable: true
+  description: "Fruit size code. Always zero-padded to 3 digits (e.g., '088' not '88')."
+
+- name: Grade
+  type: nvarchar(50)
+  nullable: true
+  description: "Quality grade (e.g., 'FANCY', 'CHOICE')."
+
+- name: qnt
+  type: numeric(38,6)
+  nullable: true
+  description: "Total carton quantity for this size/grade in the 14-day window."
+
+- name: commodity_total
+  type: numeric(38,6)
+  nullable: true
+  description: "Total cartons across all sizes/grades for this commodity."
+
+- name: pct_of_commodity
+  type: numeric(38,6)
+  nullable: true
+  description: "Fraction of commodity total (decimal). ALWAYS multiply by 100 for display. Use ROUND(pct_of_commodity * 100, 2)."
+
+- name: ProductIdx
+  type: int
+  nullable: true
+  description: "Product index. Join to VW_PRODUCTS for full product details."
+
+- name: Style
+  type: nvarchar(50)
+  nullable: true
+  description: |
+    Pack style from product master. Style suffix indicates bag type:
+    FB = Film Bags, CB = Combo Bags, NB = Net Bags, WM = Wicketed Mesh Bags,
+    HD = Header Bags. All others (CTN, etc.) are Bulk. These run on different equipment.
+
+- name: TtlBins
+  type: float
+  nullable: false
+  description: |
+    Total bulk bins processed for this commodity in the 14-day window.
+    Same value for every row of the same commodity.
+    This is the denominator for pro-rata calculations.
+
+- name: ProRataBulkBins
+  type: float
+  nullable: false
+  description: |
+    Pro-rata bulk bin allocation for this size/grade combination.
+    Formula: TtlBins * pct_of_commodity.
+    Tells you how many bulk bins yielded this particular size/grade output.
+
+relationships:
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CmtyIdx
+    target_column: CommodityIDx
+    cardinality: many-to-one
+    note: "CF commodity lookup"
+
+  - target: dbo.VW_PRODUCTS
+    join_column: ProductIdx
+    target_column: ProductIdx
+    cardinality: many-to-one
+    note: "Product master details"
+
+common_filters:
+  - column: Commodity
+    operation: "= 'NAVEL'"
+    description: "Filter to specific commodity"
+
+sample_queries:
+  - description: "Packout with bin allocation for a commodity"
+    sql: |
+      SELECT SizeName, Grade, Style,
+        qnt as Cartons,
+        ROUND(pct_of_commodity * 100, 2) as PctOfCommodity,
+        TtlBins,
+        ProRataBulkBins
+      FROM dbo.VW_14DAYAVGPACKOUT_EXT
+      WHERE Commodity = 'NAVEL'
+      ORDER BY Grade, SizeName
+
+notes: |
+  - Same grain as VW_14DAYAVGPACKOUT with added product detail and bin allocation
+  - TtlBins is the same across all rows of a commodity (it's the commodity total bins)
+  - ProRataBulkBins = TtlBins * pct_of_commodity (proportional bin allocation)
+  - CF system data - CmtyIdx references Cobblestone commodity table
+
+_sample_data:
+- Commodity: NAVEL
+  CmtyIdx: '1'
+  SizeName: '040'
+  Grade: CHOICE
+  qnt: '3827.000000'
+  commodity_total: '232000.000000'
+  pct_of_commodity: '0.016495'
+  ProductIdx: '3564'
+  Style: CTN
+  TtlBins: '11095.0'
+  ProRataBulkBins: '183.0'
+- Commodity: NAVEL
+  CmtyIdx: '1'
+  SizeName: '040'
+  Grade: FANCY
+  qnt: '10623.000000'
+  commodity_total: '232000.000000'
+  pct_of_commodity: '0.045788'
+  ProductIdx: '3565'
+  Style: CTN
+  TtlBins: '11095.0'
+  ProRataBulkBins: '508.0'
+- Commodity: NAVEL
+  CmtyIdx: '1'
+  SizeName: 048
+  Grade: CHOICE
+  qnt: '7895.000000'
+  commodity_total: '232000.000000'
+  pct_of_commodity: '0.034030'
+  ProductIdx: '3566'
+  Style: CTN
+  TtlBins: '11095.0'
+  ProRataBulkBins: '378.0'

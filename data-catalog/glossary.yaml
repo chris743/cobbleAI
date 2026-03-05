@@ -1,0 +1,277 @@
+# Business Glossary
+# Domain-specific terms for DM03 Data Warehouse
+# These definitions help AI agents understand the citrus packing operation
+
+terms:
+
+# Source Systems - CRITICAL FOR JOINS
+- term: Cobblestone (CF)
+  definition: |
+    Grower accounting and settlement system. Handles:
+    - Bulk bin receiving from field
+    - Grower/block tracking
+    - Pool settlements
+    - Packout reports to growers
+    
+    Tables prefixed with CF_ or containing source_database = 'cobblestone'
+    
+    Key identifiers:
+    - Pool ID is in `pool_id` field
+    - Join CF tables to CF tables only (match source_database)
+  related_views:
+    - dbo.VW_CF_COMMODITIES
+    - dbo.VW_CF_POOLS
+
+- term: LP
+  definition: |
+    Inventory and packing operations system. Handles:
+    - Processed bin inventory
+    - Finished goods inventory
+    - Packing and repacking transactions
+    - Sales orders and shipments
+    
+    Tables prefixed with LP_ or containing source_database = 'LP'
+    
+    Key identifiers:
+    - Pool ID is in `lot_id` field (not pool_id!)
+    - Join LP tables to LP tables only (match source_database)
+  related_views:
+    - dbo.VW_LP_COMMODITIES
+    - dbo.VW_LP_LOTS
+    - dbo.VW_LPSALESORDERS
+    - dbo.VW_BININVENTORY
+
+- term: source_database
+  definition: |
+    Column that identifies which system a record originated from.
+    Values: 'cobblestone' or 'LP'
+    
+    CRITICAL: When joining tables with ID columns (CommodityID, GraderID, etc.),
+    you MUST ensure source_database matches on both sides. IDs are NOT unique
+    across systems - CommodityID 5 in Cobblestone is different from CommodityID 5 in LP.
+  related_views: []
+
+# Core Inventory Units
+- term: Bin
+  definition: |
+    A bulk container unit for inventory. Two types:
+    - Field Bin (Bulk Bin): Untreated, unsorted fruit picked directly from the orchard
+    - Processed Bin (Inventory Bin): Single commodity, single size/grade combination after washing, waxing, grading, and sizing
+    
+    Process flow: Field bins arrive from orchard → fruit is washed, waxed, graded, sized → returned to processed bins in inventory.
+    
+    Conversion: 1 bin = 23.2 cartons
+  related_views:
+    - dbo.VW_BININVENTORY
+    - dbo.VW_BINSRECEIVED
+    - dbo.BININVSNAPSHOTS_EXT
+
+- term: Carton
+  definition: |
+    Finished goods shipping unit. Standard sales unit for packed fruit sold to customers.
+    Cartons will be an actual value or an equivalent quantity. for example a customer might buy 1200
+    cartons of 6-5# bags but the carton equivalent for navels is 40lbs. all equivalents are based off 40lbs 
+    except mandarins which are 25 lbs. these 40/25lb equvalents will be referred to as standard cartons or SCTN
+    Conversion: 1 bin = 23.2 cartons
+  related_views:
+    - rpt.vw_IC_REPACKING_OutputByRun
+
+- term: Style
+  definition: |
+    Pack style defines the packaging format for finished goods. Styles determine which
+    equipment/line the product runs on. Key style code suffixes:
+    - FB = Film Bags
+    - CB = Combo Bags
+    - NB = Net Bags
+    - WM = Wicketed Mesh Bags
+    - HD = Header Bags
+    - All other styles (CTN, BIN, etc.) = Bulk
+    Examples: '8-3lb BAG FB' = 8-count 3lb film bags, '9-3# FB' = 9-count 3lb film bags,
+    'CTN' = standard carton (bulk), '10# CARTON' = 10-pound carton (bulk).
+  related_views:
+    - dbo.VW_PRODUCTS
+    - dbo.VW_LPSALESORDERS
+    - rpt.vw_IC_REPACKING_OutputByRun
+
+# Product Attributes
+- term: Commodity
+  definition: |
+    A single crop type that we harvest. Examples: Navels, Lemons, Mandarins, Grapefruit, Cara Caras, Minneolas.
+  related_views:
+    - dbo.VW_CF_COMMODITIES
+    - dbo.VW_LP_COMMODITIES
+    - Ref.vw_CommodityVariety
+    - dbo.VW_PRODUCTS
+
+- term: Variety
+  definition: |
+    A specific cultivar within a commodity. Example: Within Navels, varieties might include Washington, Fukumoto, Powell.
+  related_views:
+    - Ref.vw_CommodityVariety
+
+- term: Grade
+  definition: |
+    Quality classification of fruit determined during processing. Based on appearance, blemishes, color, and size consistency.
+    Common grades: Fancy (highest quality), Choice, Juice (lowest/processing grade).
+    Export grades: EXP Fancy, EXP Choice these are higher grades used for export market and have export grade coatings since the fruit will be on a boat for over a month
+      assume EXP fancy fruit is about 1/2 a size bigger than stated and is the highest possible grade and exp choice gets the same sizing but the quality is between domestic fancy and choice
+  related_views:
+    - dbo.VW_BININVENTORY
+
+- term: Size
+  definition: |
+    Fruit count per standard carton. Smaller number = larger fruit. Determined during sizing on the packing line.
+    mandarins are the exception as we will say a standard carton is 25lbs but sizing is based of a 5lb carton. so actual pieces in a 25lb is the size * 5
+    Examples: 88s (large), 113s (medium), 138s (small).
+    Size directly affects pricing - larger fruit typically commands premium prices.
+
+    IMPORTANT: Size values are stored as zero-padded 3-digit strings in the database
+    (e.g., '088', '113', '138'). When a user says "size 88", always filter as '088'.
+    Always pad to 3 digits with leading zeros when building queries.
+  related_views:
+    - dbo.VW_BININVENTORY
+    - dbo.VW_E_SizerEntries
+
+# Grower & Field Tracking
+- term: Grower
+  definition: |
+    The source/owner of the fruit. Growers own the orchards we pick from.
+    Business model: We sell grower fruit on consignment - we service both growers (as suppliers) and end consumers (as customers).
+    Growers receive settlement payments based on pool returns or lot settlements.
+  related_views:
+    - dbo.vw_Portal_BinsReceived_ByGrower
+
+- term: Block
+  definition: |
+    A specific orchard section belonging to a grower. Fruit is tracked by block for traceability and grower settlement.
+    Blocks allow growers to see performance differences across their various plantings.
+  related_views:
+    - dbo.VW_BLOCKS
+    - dbo.vw_Portal_BinsReceived_ByBlock
+    - dbo.vw_Portal_BinsReceived_ByBlock_A
+
+# Financial/Settlement Structures
+- term: Pool
+  definition: |
+    A logical grouping of product used for averaging sales and redistributing returns to growers.
+    
+    How it works:
+    1. Fruit from multiple growers is received into a pool
+    2. All fruit in the pool is sold over the season
+    3. Total pool revenue is calculated by size and grade
+    4. Returns are distributed proportionally to growers based on their contribution to the pool
+    
+    Pools smooth out price volatility - growers share in average returns rather than spot prices.
+    All pools for grower accounting purposes are prefixed with C example C26NG01 is the 2026 season for navel oranges in general maturity and this is the first pool of the season
+    a vast majority of "lot" columns will be pool ID values always look for lot columns if there is no pool column. 
+  related_views:
+    - dbo.VW_CF_POOLS
+    - dbo.VW_LP_COMMODITIES
+    - dbo.VW_LPSALESORDERS
+
+- term: Lot
+  definition: |
+    A smaller product grouping, typically a container or truckload of purchased fruit.
+    Unlike pools, lots are settled directly - the specific fruit is tracked and paid out individually rather than averaged with other growers.
+    Lot columns will most often have pool vlaues for domestic fruit. defer to pool definition for more details.
+  related_views:
+    - dbo.VW_LP_LOTS
+    - dbo.VW_LP_COMMODITIES
+    - dbo.VW_LPSALESORDERS
+
+# Operations
+- term: Receiving
+  definition: |
+    The process of accepting field bins from growers into the warehouse.
+    Creates receiving tickets that track bin counts by grower, block, commodity, and date.
+    This is the entry point for all fruit into the system.
+  related_views:
+    - dbo.VW_ALLRECEIVINGS
+    - dbo.VW_BINSRECEIVED
+
+- term: Packout
+  definition: |
+    Reports generated and sent to growers showing the size and grade breakdown of the product they sent.
+    Packouts tell growers what percentage of their fruit ended up in each size/grade bucket after processing.
+    Critical for grower relations and helps growers understand their crop quality.
+  related_views:
+    - dbo.VW_14DAYAVGPACKOUT
+    - dbo.VW_14DAYAVGPACKOUT_EXT
+
+- term: Repack
+  definition: |
+    Transactions that convert product from one form to another. Types include:
+    - Bin to Carton: Most common - processed bins packed into cartons for customers
+    - Restyle: Finished goods converted to different style of finished goods
+    - Carton to Bin: Finished goods returned to bins for storage
+    - Bin to Bin: Regrading fruit from original bin classification
+    
+    Repack runs track inputs, outputs, labor, and yield.
+  related_views:
+    - rpt.vw_IC_Repack_Run_Summary
+    - rpt.vw_IC_REPACKING_OutputByRun
+    - rpt.vw_RepackLabor_CellAreaAllocated
+
+- term: Packing Entry
+  definition: |
+    The transaction that converts bulk bins (Cobblestone) into processed bins (LP).
+    This is the handoff point between systems.
+    
+    Key distinction:
+    - Packing entry: OUTPUTS ONLY (creates new LP inventory from CF bulk bins)
+    - Repacking entry: INPUTS AND OUTPUTS (transforms existing LP inventory)
+    
+    After packing entry, all inventory operations occur in LP.
+  related_views:
+    - dbo.VW_BININVENTORY
+
+- term: Sizer
+  definition: |
+    Equipment that sorts fruit by size during processing.
+    Sizer entries track throughput, size distribution, and run times.
+    sizer may also be referred to as grader, tomra, aweta, sorter etc.
+  related_views:
+    - dbo.VW_E_SizerEntries
+
+- term: Shipment
+  definition: |
+    Outbound movement of packed cartons to customers.
+    Tracks what was shipped, when, to whom, and associated sales order.
+  related_views:
+    - dbo.VW_E_SHIPMENTS
+    - rpt.vw_Shipments_RS
+
+- term: Storage Charges
+  definition: |
+    Fees charged to growers for holding inventory in cold storage beyond a threshold period.
+    Encourages timely movement of product and recovers carrying costs.
+  related_views:
+    - rpt.vw_E_StorageCharges
+
+# Sales
+- term: Sales Order
+  definition: |
+    Customer order for packed cartons. Cobblestone references the sales system.
+  related_views:
+    - dbo.VW_COBBLESTONESALESORDERS
+    - dbo.VW_LPSALESORDERS
+
+# Labor & Workforce
+- term: UKG
+  definition: |
+    UKG (Ultimate Kronos Group) - workforce management system.
+    Contains labor hours, headcount, attendance, and payroll data by department, area, and employee.
+    Used for labor cost analysis, productivity tracking, and workforce planning.
+  related_views:
+    - rpt.vw_UKG_LaborSummaryDaily
+    - rpt.vw_LaborSummaryDaily_Combined
+
+# Key Conversions (for agent calculations)
+conversions:
+  - name: bins_to_cartons
+    formula: "bins * 23.2"
+    description: "Convert bin count to carton equivalent"
+  
+  - name: cartons_to_bins
+    formula: "cartons / 23.2"
+    description: "Convert carton count to bin equivalent"

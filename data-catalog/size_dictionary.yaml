@@ -1,0 +1,321 @@
+# Size Dictionary by Commodity
+# Zero-padded 3-digit codes = count per standard carton (smaller number = larger fruit)
+# Standard carton = 40 lbs for all commodities except mandarins (25 lbs)
+# JUICE = juice/processing grade (not a numeric size)
+#
+# Generated from VW_LPSALESORDERS (past 12 months) and VW_BININVENTORY
+
+commodities:
+
+  NAVEL:
+    standard_carton_weight: 40
+    sizes:
+      - code: "032"
+        description: "32 count - very large"
+      - code: "036"
+        description: "36 count - very large"
+      - code: "040"
+        description: "40 count - large"
+      - code: "048"
+        description: "48 count - large"
+      - code: "056"
+        description: "56 count - medium-large"
+      - code: "064"
+        description: "64 count"
+      - code: "072"
+        description: "72 count - medium"
+      - code: "088"
+        description: "88 count - medium-small"
+      - code: "113"
+        description: "113 count - small"
+      - code: "138"
+        description: "138 count - small"
+      - code: "163"
+        description: "163 count - very small"
+
+  CARA CARA:
+    standard_carton_weight: 40
+    note: "Same size range as Navels"
+    sizes:
+      - code: "032"
+      - code: "036"
+      - code: "040"
+      - code: "048"
+      - code: "056"
+      - code: "064"
+      - code: "072"
+      - code: "088"
+      - code: "113"
+      - code: "138"
+      - code: "163"
+      - code: "180"
+
+  BLOOD:
+    standard_carton_weight: 40
+    sizes:
+      - code: "036"
+      - code: "040"
+      - code: "048"
+      - code: "056"
+      - code: "072"
+      - code: "088"
+      - code: "113"
+      - code: "138"
+      - code: "163"
+      - code: "180"
+
+  VALENCIA:
+    standard_carton_weight: 40
+    sizes:
+      - code: "040"
+      - code: "048"
+      - code: "056"
+      - code: "072"
+      - code: "088"
+      - code: "113"
+      - code: "138"
+      - code: "163"
+
+  MIDKNIGHT:
+    standard_carton_weight: 40
+    sizes:
+      - code: "040"
+      - code: "048"
+      - code: "056"
+      - code: "072"
+      - code: "088"
+      - code: "113"
+      - code: "138"
+      - code: "163"
+
+  LEMON:
+    standard_carton_weight: 40
+    sizes:
+      - code: "063"
+        description: "63 count - very large"
+      - code: "075"
+        description: "75 count - large"
+      - code: "095"
+        description: "95 count - medium-large"
+      - code: "115"
+        description: "115 count - medium"
+      - code: "140"
+        description: "140 count - medium-small"
+      - code: "165"
+        description: "165 count - small"
+      - code: "200"
+        description: "200 count - very small"
+      - code: "235"
+        description: "235 count - very small"
+
+  SDLESS LEM:
+    standard_carton_weight: 40
+    note: "Seedless lemons - same size range as standard lemons"
+    sizes:
+      - code: "075"
+      - code: "095"
+      - code: "115"
+      - code: "140"
+      - code: "165"
+      - code: "200"
+      - code: "235"
+
+  GRAPEFRUIT:
+    standard_carton_weight: 40
+    sizes:
+      - code: "018"
+        description: "18 count - jumbo"
+      - code: "023"
+        description: "23 count - very large"
+      - code: "027"
+        description: "27 count - large"
+      - code: "032"
+        description: "32 count - large"
+      - code: "036"
+        description: "36 count - medium-large"
+      - code: "040"
+        description: "40 count - medium"
+      - code: "048"
+        description: "48 count - medium-small"
+      - code: "056"
+        description: "56 count - small"
+      - code: "064"
+        description: "64 count - small"
+      - code: "072"
+      - code: "080"
+
+  MANDARIN:
+    standard_carton_weight: 25
+    note: |
+      Mandarin sizing is based on a 5 lb carton. Multiply size code by 5 to get
+      pieces per 25 lb standard carton (e.g., size 021 = 105 pieces per 25 lb).
+      Import sizes (001-005, X/B suffixes) follow the same convention - treat as sizes.
+      Gold Nugget mandarin sizes (MED/LRG, JUMBO/XL, 22/3 CT) are also valid sizes.
+    sizes:
+      # Import sizes
+      - code: "001"
+        description: "Import size"
+      - code: "002"
+        description: "Import size"
+      - code: "003"
+        description: "Import size"
+      - code: "004"
+        description: "Import size"
+      - code: "005"
+        description: "Import size"
+      # Standard piece-count sizes (per 5 lb carton)
+      - code: "009"
+        description: "9 count per 5lb (45 per 25lb) - jumbo"
+      - code: "012"
+        description: "12 count per 5lb (60 per 25lb) - very large"
+      - code: "015"
+        description: "15 count per 5lb (75 per 25lb) - large"
+      - code: "018"
+        description: "18 count per 5lb (90 per 25lb) - medium-large"
+      - code: "021"
+        description: "21 count per 5lb (105 per 25lb) - medium"
+      - code: "024"
+        description: "24 count per 5lb (120 per 25lb) - medium-small"
+      - code: "028"
+        description: "28 count per 5lb (140 per 25lb) - small"
+      - code: "032"
+        description: "32 count per 5lb (160 per 25lb) - small"
+      - code: "036"
+        description: "36 count per 5lb (180 per 25lb) - very small"
+      - code: "040"
+        description: "40 count per 5lb (200 per 25lb) - very small"
+      - code: "044"
+        description: "44 count per 5lb (220 per 25lb) - very small"
+      # Import sizes (X/B suffix)
+      - code: "01X"
+        description: "Import size"
+      - code: "02B"
+        description: "Import size"
+      - code: "02X"
+        description: "Import size"
+      - code: "04B"
+        description: "Import size"
+      - code: "1XX"
+        description: "Import size"
+      # Gold Nugget mandarin sizes
+      - code: "MED/LRG"
+        description: "Gold Nugget mandarin size"
+      - code: "JUMBO/XL"
+        description: "Gold Nugget mandarin size"
+      - code: "22/3 CT"
+        description: "Gold Nugget mandarin size"
+
+  MINNEOLA:
+    standard_carton_weight: 40
+    sizes:
+      - code: "032"
+      - code: "040"
+      - code: "048"
+      - code: "056"
+      - code: "064"
+      - code: "080"
+      - code: "100"
+      - code: "125"
+      - code: "150"
+      - code: "180"
+      - code: "210"
+      # Import sizes
+      - code: "03X"
+        description: "Import size"
+      - code: "04X"
+        description: "Import size"
+      - code: "05X"
+        description: "Import size"
+      - code: "06X"
+        description: "Import size"
+
+  GOLD NUG:
+    standard_carton_weight: 25
+    note: "Gold Nuggets use named sizes instead of numeric counts."
+    sizes:
+      - code: "SCOL"
+        description: "Super Colossal (largest)"
+      - code: "COL"
+        description: "Colossal"
+      - code: "MAM"
+        description: "Mammoth"
+      - code: "JUM"
+        description: "Jumbo"
+      - code: "LRG"
+        description: "Large"
+      - code: "MED"
+        description: "Medium"
+      - code: "SML"
+        description: "Small"
+      - code: "SMA"
+        description: "Small (same as SML)"
+
+  PUMMELO:
+    standard_carton_weight: 40
+    sizes:
+      - code: "004"
+      - code: "006"
+      - code: "008"
+      - code: "010"
+      - code: "012"
+      - code: "014"
+      - code: "018"
+      - code: "023"
+      - code: "027"
+
+  # === ORGANIC VARIANTS (same size ranges as conventional) ===
+
+  ORGNAV:
+    standard_carton_weight: 40
+    note: "Organic Navels"
+    sizes: ["040", "048", "056", "072", "088", "113", "138"]
+
+  ORGLEM:
+    standard_carton_weight: 40
+    note: "Organic Lemons"
+    sizes: ["075", "095", "115", "140", "165"]
+
+  ORGMAN:
+    standard_carton_weight: 25
+    note: "Organic Mandarins"
+    sizes: ["024", "028", "032", "036"]
+
+  ORGGRA:
+    standard_carton_weight: 40
+    note: "Organic Grapefruit"
+    sizes: ["027", "032", "036", "040", "048", "056"]
+
+  ORGMIN:
+    standard_carton_weight: 40
+    note: "Organic Minneola"
+    sizes: ["064"]
+
+  # === NON-CITRUS (minimal size data) ===
+
+  CANTALOUPE:
+    sizes: ["009", "012", "015"]
+
+  CARROTS:
+    sizes: ["CTN"]
+    note: "Single size code - sold by carton"
+
+  GRAPE:
+    sizes: ["CTN"]
+    note: "Single size code - sold by carton"
+
+  KIWI:
+    sizes: ["CTN"]
+    note: "Single size code - sold by carton"
+
+  HONEY DEW:
+    sizes: ["005"]
+
+  LIME:
+    sizes: ["200"]
+
+# Special non-numeric size codes used across commodities
+special_size_codes:
+  JUICE: "Juice/processing grade - not a numeric size. Sold in bulk bins."
+  CTN: "Generic carton - no size differentiation."
+  X_suffix: "Import size codes (e.g., 01X, 03X). Treat as standard sizes."
+  B_suffix: "Import size codes (e.g., 02B, 04B). Treat as standard sizes."

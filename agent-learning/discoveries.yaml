@@ -1,0 +1,134 @@
+entries:
+- timestamp: '2026-03-04T00:00:00'
+  category: gotcha
+  key: GALOTIDX
+  value: Pool code string (e.g., 'C26NG01') is in GALOTIDX column, not LotID. GA prefix
+    = Grower Accounting.
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: gotcha
+  key: CF_LP_idx_mismatch
+  value: commodityidx, groweridx, etc. are NOT the same between CF and LP systems.
+    Never join CF tables to LP tables on idx columns directly.
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: gotcha
+  key: lotidx_contains_pools
+  value: In LP tables, lotidx usually contains POOL values for domestic fruit, not
+    actual lots.
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: gotcha
+  key: ReceivedQuantitiy_typo
+  value: Column is misspelled as 'ReceivedQuantitiy' (extra i) in VW_BININVENTORY.
+    This is from source system.
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: gotcha
+  key: mandarin_carton_equivalent
+  value: Mandarin bins = 37.5 cartons (25lb std), not 23.2 like other citrus (40lb
+    std). The equivctns column handles this automatically.
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: column_meaning
+  key: equivctns
+  value: Pre-calculated carton equivalent for a bin's AvailableQuantity. Already accounts
+    for partial bins and commodity-specific conversion rates.
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: column_meaning
+  key: BinEquivalent
+  value: In BININVSNAPSHOTS_EXT, this is the conversion RATE (cartons per bin), not
+    a quantity. Multiply Quantity * BinEquivalent = ctnqty.
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: column_meaning
+  key: CFCommodityIDX
+  value: In LP tables, this bridges back to Cobblestone commodity. Use this when joining
+    LP inventory to CF grower accounting.
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: join_pattern
+  key: inventory_to_pool
+  value: VW_BININVENTORY.LotIDx = VW_LP_LOTS.lotidx, then use GALOTIDX for pool code
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: join_pattern
+  key: inventory_to_lp_commodity
+  value: VW_BININVENTORY.CommodityIDX = VW_LP_COMMODITIES.commodityidx
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: join_pattern
+  key: inventory_to_cf_commodity
+  value: VW_BININVENTORY.CFCommodityIDX = VW_CF_COMMODITIES.commodityidx (cross-system
+    bridge)
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: business_rule
+  key: active_inventory_filter
+  value: Always filter AvailableQuantity > 0 for current inventory. Bins with 0 are
+    fully consumed.
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: business_rule
+  key: size_interpretation
+  value: Size = count per standard carton. Smaller number = bigger fruit = higher
+    price. For mandarins, multiply by 5 (size is per 5lb, std carton is 25lb).
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  category: business_rule
+  key: export_grades
+  value: EXP FANCY and EXP CHOICE are export grades. They run ~half a size larger
+    than labeled and have special coatings for ocean transit.
+  verified: true
+- timestamp: '2026-03-04T13:08:48.099069'
+  category: column_meaning
+  key: Size_column_format
+  value: Size values need to be padded to 3 characters with leading zeros (e.g., '088'
+    not '88')
+  verified: false
+- timestamp: '2026-03-04T13:36:37.062479'
+  category: column_meaning
+  key: Size_column_format
+  value: Size values are stored with 3-digit format with leading zeros (e.g., '088'
+    not '88')
+  verified: false
+- timestamp: '2026-03-04T16:45:20.550963'
+  category: column_meaning
+  key: Style_FB_meaning
+  value: FB in style codes means "film bags" (e.g., "18-2# FB" = 18 count 2-pound
+    film bags)
+  verified: false
+- timestamp: '2026-03-04T16:45:20.569638'
+  category: column_meaning
+  key: Style_format_pattern
+  value: Style codes are formatted as count-weight-style (e.g., "12-3# CB" = 12 count
+    3-pound consumer bags, "8-5# FB" = 8 count 5-pound film bags)
+  verified: false
+- timestamp: '2026-03-04T16:46:07.603736'
+  category: column_meaning
+  key: Style_CB_meaning
+  value: CB in style codes means "combo bags" (not consumer bags as previously thought)
+  verified: false
+- timestamp: '2026-03-04T16:46:07.634770'
+  category: column_meaning
+  key: Style_NB_meaning
+  value: NB in style codes means "net bags"
+  verified: false
+- timestamp: '2026-03-04T16:46:07.663032'
+  category: column_meaning
+  key: Style_WM_meaning
+  value: WM in style codes means "wicketed mesh" bags
+  verified: false
+- timestamp: '2026-03-04T16:46:07.688222'
+  category: column_meaning
+  key: Style_HD_meaning
+  value: HD in style codes means "header bags"
+  verified: false
+- timestamp: '2026-03-04T16:53:13.167077'
+  category: business_rule
+  key: film_bag_size_flexibility
+  value: Film bag orders can flex 1 size north (larger fruit) or south (smaller fruit)
+    to fill orders. This allows production flexibility when exact size inventory is
+    limited.
+  verified: false

@@ -1,0 +1,62 @@
+domain: shipments
+description: |
+  Outbound shipments, sizer/grader entries, and detailed transaction data.
+  All LP system data tracking what was shipped to customers and processing throughput.
+
+  VW_E_SHIPMENTS and vw_Shipments_RS contain the same shipment data at a very granular
+  level (header + line + product detail flattened). Prefer vw_Shipments_RS as it includes
+  an IsDeleted flag for filtering out deleted records.
+
+  VW_E_SizerEntries tracks packing line sizer/grader output.
+
+views:
+- name: dbo.VW_E_SHIPMENTS
+  system: LP
+  description: "Detailed shipment transactions (header + line + product detail flattened)."
+  use_for:
+    - Shipment detail analysis
+    - Use vw_Shipments_RS instead (has IsDeleted flag)
+
+- name: rpt.vw_Shipments_RS
+  system: LP
+  description: |
+    Preferred shipment view. Same as VW_E_SHIPMENTS plus IsDeleted soft-delete flag.
+    Use this for all shipment analysis.
+  use_for:
+    - All shipment analysis (preferred over VW_E_SHIPMENTS)
+    - Customer shipment history
+    - Revenue analysis with settlement detail
+    - Grower traceability through GABLOCKIDX and GALOTIDX
+
+- name: dbo.VW_E_SizerEntries
+  system: LP
+  description: "Sizer/grader packing line entries. Tracks what the grading equipment produced."
+  use_for:
+    - Packing line throughput
+    - Size/grade distribution from grading equipment
+    - Packout data at the sizer level
+
+key_concepts:
+  - name: Shipment Structure
+    description: |
+      Shipment records are flattened from a 3-level hierarchy:
+      - Header: Sales order info (SONO, Customer, dates, salesperson)
+      - Line: Order line detail (product, quantity, price)
+      - Product Detail: Individual inventory items that filled the line (tag, block, lot)
+
+      One order line can have MANY product detail rows (each tag that filled it).
+      Use LineQnt for order-level quantities, ProductQnt/ICQNT for fill-level detail.
+
+  - name: Equivalent Quantities
+    description: |
+      EQUIVFACTOR converts product units to standard cartons.
+      EQUIV_QNT = ICQNT * EQUIVFACTOR.
+      FinalEquivQty = final adjusted equivalent (use this for reporting).
+
+common_joins:
+  - description: "Shipments with product details"
+    sql: |
+      SELECT s.SONO, s.Customer, s.SHIPDATETIME, s.INVCDESCR,
+        s.LineQnt, s.SALEAMT, s.FinalEquivQty
+      FROM rpt.vw_Shipments_RS s
+      WHERE s.IsDeleted = 0

@@ -1,0 +1,189 @@
+# Schema documentation for rpt.vw_IC_Repack_Run_Summary
+# Detailed repack run data with input/output quantities per tag
+
+name: rpt.vw_IC_Repack_Run_Summary
+short_name: vw_IC_Repack_Run_Summary
+schema: rpt
+domain: repacking
+system: LP
+
+description: |
+  Detailed repack/packing run data. Each row = one bin tag's participation in a run.
+  Tracks inputs consumed and outputs created at the individual tag level.
+
+  Very large table (~914K rows) spanning all historical repack runs.
+  Rows with Input_QNT > 0 are consumed inputs; rows with Output_QNT > 0 are produced outputs.
+
+business_purpose: |
+  - Track repack run inputs and outputs at tag level
+  - Calculate yield (output vs input)
+  - Analyze days-in-storage before repacking
+  - Trace inventory through the repacking process
+  - Support repack efficiency and loss reporting
+
+row_count_approx: 914497
+refresh_frequency: "Real-time sync from LP system"
+
+columns:
+- name: ICRUNIDX
+  type: bigint
+  nullable: false
+  description: |
+    Repack run index. Groups all inputs and outputs for a single run.
+    Join to vw_IC_REPACKING_OutputByRun on ICRUNIDX for output details.
+
+- name: RUNDATE
+  type: datetime
+  nullable: true
+  description: "Date the repack run was executed."
+
+- name: GALOTIDX
+  type: bigint
+  nullable: true
+  description: "Grower Accounting lot index. Links to VW_LP_LOTS for pool/lot code."
+
+- name: PRODUCTIDX
+  type: bigint
+  nullable: true
+  description: "Product index for this row's product. Join to VW_PRODUCTS."
+
+- name: warehouseidx
+  type: bigint
+  nullable: true
+  description: "Warehouse index where the run took place."
+
+- name: TAGIDX
+  type: bigint
+  nullable: true
+  description: "Tag index. Internal reference to the inventory tag record."
+
+- name: TagId
+  type: varchar(50)
+  nullable: true
+  description: "Tag ID string. Physical bin tag number."
+
+- name: ReceiveDate
+  type: datetime
+  nullable: true
+  description: "Date the input bin was originally received into inventory."
+
+- name: DaysInStorage
+  type: int
+  nullable: true
+  description: "Days between ReceiveDate and RUNDATE. How long the bin sat in storage before repacking."
+
+- name: Input_QNT
+  type: decimal(38,6)
+  nullable: true
+  description: "Input quantity consumed (in product units). > 0 for input rows, 0 for output rows."
+
+- name: Output_QNT
+  type: decimal(38,6)
+  nullable: true
+  description: "Output quantity produced (in product units). > 0 for output rows, 0 for input rows."
+
+- name: Input_ICQNT
+  type: decimal(38,6)
+  nullable: true
+  description: "Input quantity in inventory control units. Usually matches Input_QNT."
+
+- name: Output_ICQNT
+  type: decimal(38,6)
+  nullable: true
+  description: "Output quantity in inventory control units. Usually matches Output_QNT."
+
+- name: Input_ICQNT_EQUIV
+  type: decimal(18,4)
+  nullable: true
+  description: |
+    Input quantity converted to standard carton equivalents.
+    For bins: Input_ICQNT * cartons-per-bin (23.2 or 37.5).
+    USE THIS for standardized volume comparisons.
+
+- name: Output_ICQNT_EQUIV
+  type: decimal(18,4)
+  nullable: true
+  description: |
+    Output quantity in standard carton equivalents.
+    USE THIS for standardized volume and yield calculations.
+
+relationships:
+  - target: rpt.vw_IC_REPACKING_OutputByRun
+    join_column: ICRUNIDX
+    target_column: ICRUNIDX
+    cardinality: many-to-many
+    note: "Link run inputs to outputs by run ID"
+
+  - target: dbo.VW_PRODUCTS
+    join_column: PRODUCTIDX
+    target_column: ProductIdx
+    cardinality: many-to-one
+    note: "Product details for input/output products"
+
+  - target: dbo.VW_LP_LOTS
+    join_column: GALOTIDX
+    target_column: GALOTIDX
+    cardinality: many-to-one
+    note: "Pool/lot code lookup"
+
+common_filters:
+  - column: RUNDATE
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days of runs"
+
+  - column: Input_QNT
+    operation: "> 0"
+    description: "Input rows only"
+
+  - column: Output_QNT
+    operation: "> 0"
+    description: "Output rows only"
+
+sample_queries:
+  - description: "Daily repack volume summary"
+    sql: |
+      SELECT
+        CAST(RUNDATE AS DATE) as RunDate,
+        SUM(Input_ICQNT_EQUIV) as TotalInputEquiv,
+        SUM(Output_ICQNT_EQUIV) as TotalOutputEquiv
+      FROM rpt.vw_IC_Repack_Run_Summary
+      WHERE RUNDATE >= DATEADD(day, -30, GETDATE())
+      GROUP BY CAST(RUNDATE AS DATE)
+      ORDER BY RunDate DESC
+
+  - description: "Average days in storage before repacking"
+    sql: |
+      SELECT
+        CAST(RUNDATE AS DATE) as RunDate,
+        AVG(DaysInStorage) as AvgDaysInStorage,
+        MAX(DaysInStorage) as MaxDaysInStorage
+      FROM rpt.vw_IC_Repack_Run_Summary
+      WHERE Input_QNT > 0
+        AND RUNDATE >= DATEADD(day, -30, GETDATE())
+      GROUP BY CAST(RUNDATE AS DATE)
+      ORDER BY RunDate DESC
+
+notes: |
+  - VERY LARGE table (~914K rows) - always filter by RUNDATE
+  - Each ICRUNIDX appears on multiple rows (one per tag/product involved)
+  - Input rows have Input_QNT > 0 and Output_QNT = 0
+  - Output rows have Output_QNT > 0 and Input_QNT = 0
+  - Use _EQUIV columns for standardized carton equivalent comparisons
+  - DaysInStorage only meaningful for input rows
+
+_sample_data:
+- ICRUNIDX: '417701'
+  RUNDATE: '2024-01-02 00:00:00'
+  GALOTIDX: '8589'
+  PRODUCTIDX: '155679'
+  warehouseidx: '12'
+  TAGIDX: '5183199'
+  TagId: '7539356'
+  ReceiveDate: '2023-12-28 00:00:00'
+  DaysInStorage: '5'
+  Input_QNT: '58.750000'
+  Output_QNT: '0.000000'
+  Input_ICQNT: '58.750000'
+  Output_ICQNT: '0.000000'
+  Input_ICQNT_EQUIV: '1365.9375'
+  Output_ICQNT_EQUIV: '0.0000'

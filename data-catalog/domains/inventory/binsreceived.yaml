@@ -1,0 +1,236 @@
+# Schema documentation for dbo.VW_BINSRECEIVED
+# Bulk bin receiving records from growers - Cobblestone system
+
+name: dbo.VW_BINSRECEIVED
+short_name: VW_BINSRECEIVED
+schema: dbo
+domain: inventory
+system: Cobblestone
+
+description: |
+  Bulk bin receiving records from grower orchards. Each row represents a receiving ticket/tag
+  for a batch of field bins delivered by a grower to the warehouse.
+
+  This is Cobblestone (CF) system data - source_database is always 'COBBLESTONE'.
+  All idx columns reference CF master data (not LP).
+
+  These are PRE-PROCESSING bins (raw field fruit, not yet washed/waxed/graded/sized).
+  After packing entry, fruit moves to LP system (VW_BININVENTORY).
+
+business_purpose: |
+  - Track inbound bulk bin deliveries from growers
+  - Associate received fruit with grower, block, commodity, and pool for settlement
+  - Provide receiving history for grower relations and operational planning
+  - Support grower settlement calculations (how much fruit did each grower contribute)
+
+row_count_approx: 5097
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: source_database
+  type: nvarchar(20)
+  nullable: false
+  description: "Always 'COBBLESTONE' for this view. Identifies source system."
+
+- name: InventoryIdx
+  type: int
+  nullable: false
+  description: "Primary key. Unique index for each receiving record."
+
+- name: Tag
+  type: nvarchar(50)
+  nullable: true
+  description: "Receiving tag number. Physical ticket/label assigned to this batch of received bins."
+
+- name: CmtyIdx
+  type: int
+  nullable: true
+  description: |
+    Cobblestone commodity index. Join to VW_CF_COMMODITIES on commodityidx.
+    CRITICAL: This is a CF idx - do NOT join to VW_LP_COMMODITIES.
+
+- name: Commodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Commodity name (e.g., 'LEMON', 'NAVEL', 'MANDARIN'). Denormalized from CF commodity master."
+
+- name: Style
+  type: nvarchar(50)
+  nullable: true
+  description: "Bin style. Always 'BULK BIN' for field receiving (raw, unprocessed fruit)."
+
+- name: WHDesc
+  type: nvarchar(40)
+  nullable: true
+  description: "Warehouse description. Receiving location name (e.g., 'COBBLESTONE SANGER')."
+
+- name: blockID
+  type: nvarchar(12)
+  nullable: true
+  description: "Block ID string (e.g., '2007102'). Identifies the orchard block the fruit was picked from."
+
+- name: GablockIdx
+  type: int
+  nullable: true
+  description: |
+    Grower Accounting block index. Join to VW_BLOCKS on GABLOCKIDX.
+    GA prefix = Grower Accounting field.
+    Links this receiving to the specific orchard block for traceability.
+
+- name: NAME
+  type: nvarchar(40)
+  nullable: true
+  description: |
+    Block name (denormalized from VW_BLOCKS).
+    Format: 'GROWER_NAME - BLOCK_DESCRIPTION' (e.g., 'RIDDLE, LLC - BLK 01-02').
+
+- name: ReceiveDate
+  type: datetime2
+  nullable: true
+  description: "Date the bins were received at the warehouse. Key date for receiving reports and grower delivery history."
+
+- name: RecvQnt
+  type: float
+  nullable: true
+  description: |
+    Received quantity - number of bulk bins received in this ticket.
+    This is a bin count (not cartons). Multiply by 23.2 for approximate carton equivalent.
+
+- name: poolID
+  type: nvarchar(12)
+  nullable: true
+  description: |
+    Pool ID code string (e.g., 'C25LG12'). The pool this fruit is assigned to for grower settlement.
+    Pool code format: C[YY][Commodity][Maturity][Sequence]
+    Example: C25LG12 = Crop year 2025, Lemons, General maturity, pool 12.
+    Join to VW_CF_POOLS for full pool details.
+
+relationships:
+  - target: dbo.VW_BLOCKS
+    join_column: GablockIdx
+    target_column: GABLOCKIDX
+    cardinality: many-to-one
+    note: "Block master data - orchard traceability"
+
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CmtyIdx
+    target_column: commodityidx
+    cardinality: many-to-one
+    note: "CF commodity details. Do NOT use VW_LP_COMMODITIES."
+
+  - target: dbo.VW_CF_POOLS
+    join_column: poolID
+    target_column: ID
+    cardinality: many-to-one
+    note: "Pool master for grower settlement. Join poolID to CF_POOLS.ID (pool code string)."
+
+common_filters:
+  - column: ReceiveDate
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days of receiving"
+
+  - column: Commodity
+    operation: "= 'LEMON'"
+    description: "Filter to specific commodity"
+
+  - column: RecvQnt
+    operation: "> 0"
+    description: "Only records with actual received quantity"
+
+sample_queries:
+  - description: "Total bins received by commodity in last 30 days"
+    sql: |
+      SELECT
+        Commodity,
+        SUM(RecvQnt) as TotalBinsReceived,
+        COUNT(*) as ReceivingTickets
+      FROM dbo.VW_BINSRECEIVED
+      WHERE ReceiveDate >= DATEADD(day, -30, GETDATE())
+      GROUP BY Commodity
+      ORDER BY TotalBinsReceived DESC
+
+  - description: "Receiving by grower (using block name)"
+    sql: |
+      SELECT
+        NAME as BlockName,
+        Commodity,
+        ReceiveDate,
+        SUM(RecvQnt) as BinsReceived
+      FROM dbo.VW_BINSRECEIVED
+      WHERE ReceiveDate >= DATEADD(day, -7, GETDATE())
+      GROUP BY NAME, Commodity, ReceiveDate
+      ORDER BY ReceiveDate DESC, BinsReceived DESC
+
+  - description: "Receiving by pool"
+    sql: |
+      SELECT
+        poolID,
+        Commodity,
+        SUM(RecvQnt) as TotalBins,
+        MIN(ReceiveDate) as FirstReceived,
+        MAX(ReceiveDate) as LastReceived
+      FROM dbo.VW_BINSRECEIVED
+      GROUP BY poolID, Commodity
+      ORDER BY poolID
+
+  - description: "Receiving detail for specific block"
+    sql: |
+      SELECT
+        Tag,
+        Commodity,
+        ReceiveDate,
+        RecvQnt,
+        poolID,
+        WHDesc
+      FROM dbo.VW_BINSRECEIVED
+      WHERE GablockIdx = 75
+      ORDER BY ReceiveDate DESC
+
+notes: |
+  - All data is Cobblestone system - join to CF tables only (VW_CF_COMMODITIES, VW_CF_POOLS)
+  - CmtyIdx is a CF commodity index, NOT compatible with LP commodity indexes
+  - RecvQnt is in BINS, not cartons (multiply by 23.2 for carton equivalent)
+  - Style is always 'BULK BIN' - these are unprocessed field bins
+  - NAME column contains denormalized block name (format: 'Grower - Block Description')
+  - poolID contains the pool code string directly (e.g., 'C25LG12'), not a numeric index
+
+_sample_data:
+- source_database: COBBLESTONE
+  InventoryIdx: '114126'
+  Tag: '109971'
+  CmtyIdx: '4'
+  Commodity: LEMON
+  Style: BULK BIN
+  WHDesc: COBBLESTONE SANGER
+  blockID: '2007102'
+  GablockIdx: '75'
+  NAME: RIDDLE, LLC - BLK 01-02
+  ReceiveDate: '2025-04-09 00:00:00'
+  RecvQnt: '50.0'
+  poolID: C25LG12
+- source_database: COBBLESTONE
+  InventoryIdx: '114127'
+  Tag: '109973'
+  CmtyIdx: '4'
+  Commodity: LEMON
+  Style: BULK BIN
+  WHDesc: COBBLESTONE SANGER
+  blockID: '2034503'
+  GablockIdx: '620'
+  NAME: KATAYAMA -- R5LS LEMON
+  ReceiveDate: '2025-04-09 00:00:00'
+  RecvQnt: '50.0'
+  poolID: C25LG12
+- source_database: COBBLESTONE
+  InventoryIdx: '114128'
+  Tag: '109978'
+  CmtyIdx: '4'
+  Commodity: LEMON
+  Style: BULK BIN
+  WHDesc: COBBLESTONE SANGER
+  blockID: '2007102'
+  GablockIdx: '75'
+  NAME: RIDDLE, LLC - BLK 01-02
+  ReceiveDate: '2025-04-09 00:00:00'
+  RecvQnt: '50.0'
+  poolID: C25LG12

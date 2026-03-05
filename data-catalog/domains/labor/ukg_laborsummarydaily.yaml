@@ -1,0 +1,251 @@
+# Schema documentation for rpt.vw_UKG_LaborSummaryDaily
+# Raw UKG daily labor feed - all columns are nvarchar text
+
+name: rpt.vw_UKG_LaborSummaryDaily
+short_name: vw_UKG_LaborSummaryDaily
+schema: rpt
+domain: labor
+system: UKG
+
+description: |
+  Raw daily labor data feed from UKG (Ultimate Kronos Group).
+  Same structure as vw_LaborSummaryDaily_Combined but with TEXT columns
+  (most numeric/money fields are nvarchar).
+
+  PREFER vw_LaborSummaryDaily_Combined for analysis - it has parsed _num columns.
+  Use this view only when you need the raw UKG format (e.g., debugging data quality).
+
+business_purpose: |
+  - Raw UKG data feed for auditing and data quality checks
+  - Source data for the Combined view
+  - Debugging when _num parsed values don't match originals
+
+row_count_approx: 39679
+refresh_frequency: "Weekly - Thursdays at 8am PST from UKG"
+
+columns:
+- name: Employee Id
+  type: nvarchar(50)
+  nullable: false
+  description: "UKG employee ID. Text format (vs smallint in Combined). Part of composite key with Counter Date."
+
+- name: Counter Date
+  type: date
+  nullable: false
+  description: "Work date. Part of composite key with Employee Id."
+
+- name: Cost Centers(2)
+  type: nvarchar(255)
+  nullable: false
+  description: "Actual department/cost center worked. Format: '[Code] - [Description]'."
+
+- name: Payroll Job Title
+  type: nvarchar(255)
+  nullable: false
+  description: "Employee's payroll job title."
+
+- name: Daily Overtime Hours
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Daily overtime hours as text. Use Combined view's _num column for calculations."
+
+- name: Default Cost Centers
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Employee's default/home cost center."
+
+- name: Double Time Hours
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Double time hours as text. Use Combined view's _num column for calculations."
+
+- name: Double Time Pay
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Double time pay as text with $ formatting. Use Combined view's _num column for calculations."
+
+- name: Employee Name
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Full employee name."
+
+- name: Hourly Pay
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Hourly pay rate as text with $ formatting. Use Combined view's _num column for calculations."
+
+- name: Manager 1 Name
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Direct manager name. Format: 'Name (Company) (EmployeeId)'."
+
+- name: Overtime Pay
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Overtime pay as text with $ formatting. Use Combined view's _num column for calculations."
+
+- name: Regular Hours
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Regular hours as text. Use Combined view's _num column for calculations."
+
+- name: Regular Pay
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Regular pay as text with $ formatting. Use Combined view's _num column for calculations."
+
+- name: Total Hours
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Total hours as text. Use Combined view's _num column for calculations."
+
+- name: Total Pay
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Total pay as text with $ formatting. Use Combined view's _num column for calculations."
+
+- name: Weekly Overtime Hours
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Weekly overtime hours as text."
+
+- name: Weekly Overtime Pay
+  type: nvarchar(MAX)
+  nullable: true
+  description: "Weekly overtime pay as text with $ formatting."
+
+- name: first_seen_utc
+  type: datetime2
+  nullable: false
+  description: "UTC timestamp when this record was first ingested from UKG."
+
+- name: last_seen_utc
+  type: datetime2
+  nullable: false
+  description: "UTC timestamp when this record was last seen in UKG export."
+
+- name: last_updated_utc
+  type: datetime2
+  nullable: false
+  description: "UTC timestamp when this record was last modified."
+
+- name: Daily Overtime Hours_num
+  type: decimal(10,2)
+  nullable: true
+  description: "Parsed numeric daily overtime hours."
+
+- name: Double Time Hours_num
+  type: decimal(10,2)
+  nullable: true
+  description: "Parsed numeric double time hours."
+
+- name: Regular Hours_num
+  type: decimal(10,2)
+  nullable: true
+  description: "Parsed numeric regular hours."
+
+- name: Total Hours_num
+  type: decimal(10,2)
+  nullable: true
+  description: "Parsed numeric total hours."
+
+- name: Weekly Overtime Hours_num
+  type: decimal(10,2)
+  nullable: true
+  description: "Parsed numeric weekly overtime hours."
+
+- name: Double Time Pay_num
+  type: decimal(12,2)
+  nullable: true
+  description: "Parsed numeric double time pay."
+
+- name: Overtime Pay_num
+  type: decimal(12,2)
+  nullable: true
+  description: "Parsed numeric overtime pay."
+
+- name: Regular Pay_num
+  type: decimal(12,2)
+  nullable: true
+  description: "Parsed numeric regular pay."
+
+- name: Total Pay_num
+  type: decimal(12,2)
+  nullable: true
+  description: "Parsed numeric total pay."
+
+- name: Weekly Overtime Pay_num
+  type: decimal(12,2)
+  nullable: true
+  description: "Parsed numeric weekly overtime pay."
+
+- name: Hourly Pay_num
+  type: decimal(12,2)
+  nullable: true
+  description: "Parsed numeric hourly pay rate."
+
+- name: is_deleted
+  type: bit
+  nullable: false
+  description: "Soft delete flag. 0 = active, 1 = deleted in UKG."
+
+- name: deleted_utc
+  type: datetime2
+  nullable: true
+  description: "UTC timestamp when marked as deleted. Null for active records."
+
+relationships: []
+
+common_filters:
+  - column: is_deleted
+    operation: "= 0"
+    description: "Active records only"
+
+sample_queries:
+  - description: "Use the Combined view instead"
+    sql: |
+      -- PREFER vw_LaborSummaryDaily_Combined for all analysis
+      -- This raw view has text columns that require casting
+      SELECT * FROM rpt.vw_UKG_LaborSummaryDaily WHERE 1=0
+
+notes: |
+  - PREFER vw_LaborSummaryDaily_Combined for all analysis - it has properly typed _num columns
+  - This raw view has $ formatting in pay columns (e.g., '$25.00') making direct math impossible
+  - Employee Id is nvarchar here vs smallint in Combined - same data, different type
+  - Same row count difference vs Combined is because Combined merges additional data sources
+  - Data refreshes weekly on Thursdays at 8am PST from UKG
+
+_sample_data:
+- Employee Id: '5189'
+  Counter Date: '2025-10-01'
+  Cost Centers(2): 55 - PROCESSING- SANGER
+  Payroll Job Title: Tomra Operator - Processing PM
+  Daily Overtime Hours: '0.17'
+  Default Cost Centers: TOMRA Operator
+  Double Time Hours: '0'
+  Double Time Pay: $0
+  Employee Name: Miguel Ochoa
+  Hourly Pay: $25.00
+  Manager 1 Name: Greg Gillette (Cobblestone Fruit) (5266)
+  Overtime Pay: $7.23
+  Regular Hours: '8.00'
+  Regular Pay: $240.00
+  Total Hours: '8.17'
+  Total Pay: $247.23
+  Weekly Overtime Hours: '0'
+  Weekly Overtime Pay: $0.00
+  first_seen_utc: '2025-12-16 17:30:00'
+  last_seen_utc: '2025-12-16 17:41:15'
+  last_updated_utc: '2025-12-16 17:41:15'
+  Daily Overtime Hours_num: '0.17'
+  Double Time Hours_num: '0.00'
+  Regular Hours_num: '8.00'
+  Total Hours_num: '8.17'
+  Weekly Overtime Hours_num: '0.00'
+  Double Time Pay_num: '0.00'
+  Overtime Pay_num: '7.23'
+  Regular Pay_num: '240.00'
+  Total Pay_num: '247.23'
+  Weekly Overtime Pay_num: '0.00'
+  Hourly Pay_num: '25.00'
+  is_deleted: 'False'

@@ -1,0 +1,31 @@
+domain: labor
+description: |
+  Workforce and labor cost tracking from UKG (Ultimate Kronos Group).
+  Covers daily labor hours, pay, overtime, and headcount by employee, department, and job title.
+  Data refreshes weekly on Thursdays at 8am PST.
+
+views:
+- name: rpt.vw_UKG_LaborSummaryDaily
+  system: UKG
+  description: |
+    Daily labor summary from UKG. Base labor data feed.
+  use_for:
+    - Raw UKG labor data
+
+- name: rpt.vw_LaborSummaryDaily_Combined
+  system: UKG
+  description: |
+    Combined daily labor summary with parsed numeric columns.
+    Preferred view for labor analysis - includes _num columns for safe calculations.
+  use_for:
+    - Labor cost analysis
+    - Overtime tracking
+    - Headcount and productivity reporting
+
+key_concepts:
+  - name: Numeric Columns
+    description: |
+      The Combined view has both text and _num columns. ALWAYS use _num suffix columns
+      for calculations (e.g., Total Hours_num, Total Pay_num).
+
+common_joins: []

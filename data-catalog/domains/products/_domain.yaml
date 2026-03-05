@@ -1,0 +1,53 @@
+domain: products
+description: |
+  Product master data, pool/lot definitions, and commodity/variety reference.
+  Contains reference tables from both CF and LP systems.
+
+  Key tables:
+  - VW_CF_POOLS: Cobblestone pool definitions (grower settlement groupings)
+  - VW_LP_LOTS: LP lot/pool records (links LP inventory back to grower accounting)
+  - VW_PRODUCTS: Full product master (commodity + style + grade + size + label + method)
+  - Ref.vw_CommodityVariety: Commodity-to-variety mapping reference
+
+views:
+- name: dbo.VW_CF_POOLS
+  system: Cobblestone
+  description: "Pool definitions for grower settlement. Pools group fruit for averaging returns."
+  use_for:
+    - Pool lookup for CF receiving data
+    - Grower settlement reference
+
+- name: dbo.VW_LP_LOTS
+  system: LP
+  description: "Lot/pool records in LP. Links LP inventory back to grower accounting pools."
+  use_for:
+    - Lot/pool lookup for LP inventory and sales data
+    - Resolving lotidx to pool code strings
+
+- name: dbo.VW_PRODUCTS
+  system: Both (CF and LP)
+  description: "Full product master. Every unique combination of commodity/style/grade/size/label/method."
+  use_for:
+    - Product detail lookup for any productidx reference
+    - Product attribute resolution
+
+- name: Ref.vw_CommodityVariety
+  system: Cobblestone
+  description: "Commodity-to-variety mapping. Lists all varieties within each commodity."
+  use_for:
+    - Variety name lookup
+    - Commodity/variety reference
+
+key_concepts:
+  - name: Pool vs Lot
+    description: |
+      Pools (CF): Logical groupings for averaging grower returns across multiple growers.
+      Lots (LP): In LP, lotidx almost always contains pool values for domestic fruit.
+      VW_LP_LOTS.ID contains the pool code string (e.g., 'C26NG01').
+
+common_joins:
+  - description: "Resolve LP lotidx to pool code"
+    sql: |
+      SELECT i.*, l.ID as PoolCode, l.DESCR as PoolDescription
+      FROM dbo.VW_BININVENTORY i
+      JOIN dbo.VW_LP_LOTS l ON i.LotIDx = l.GALOTIDX

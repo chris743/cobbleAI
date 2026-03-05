@@ -1,0 +1,120 @@
+# Schema documentation for rpt.vw_E_StorageCharges
+# Miscellaneous charges on sales orders - LP system
+
+name: rpt.vw_E_StorageCharges
+short_name: vw_E_StorageCharges
+schema: rpt
+domain: storage
+system: LP
+
+description: |
+  Miscellaneous charges associated with sales orders. Despite the name,
+  this view contains various charge types beyond storage - including marketing
+  promos, brokerage fees, and other non-product line charges.
+
+  Each row = one charge line on a sales order, linked by SONO.
+
+business_purpose: |
+  - Track storage fees charged on orders
+  - Analyze marketing promo spend per order
+  - Monitor brokerage and other miscellaneous charges
+  - Support full order cost breakdown alongside shipment data
+
+row_count_approx: 207064
+refresh_frequency: "Real-time sync from LP system"
+
+columns:
+- name: source_database
+  type: nvarchar(20)
+  nullable: false
+  description: "Source database. Always 'LP'."
+
+- name: Storage
+  type: nvarchar(50)
+  nullable: true
+  description: "Storage/facility location (e.g., 'COBBLE SANGER')."
+
+- name: INVCDESCR
+  type: nvarchar(80)
+  nullable: true
+  description: |
+    Invoice description identifying the charge type.
+    Examples: 'MARKETING PROMO', 'BROKERAGE BY SHIPPER'.
+
+- name: Amount
+  type: numeric(38,6)
+  nullable: true
+  description: "Charge amount in dollars."
+
+- name: SONO
+  type: nvarchar(8)
+  nullable: true
+  description: "Sales order number. Join to rpt.vw_Shipments_RS or dbo.VW_LPSALESORDERS on SONO."
+
+- name: SHIPDATETIME
+  type: datetime2
+  nullable: true
+  description: "Ship date of the associated order."
+
+relationships:
+  - target: rpt.vw_Shipments_RS
+    join_column: SONO
+    target_column: SONO
+    cardinality: many-to-many
+    note: "Order-level join to shipment detail (SONO is not unique in either view)"
+
+common_filters:
+  - column: SHIPDATETIME
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days"
+
+  - column: INVCDESCR
+    operation: "LIKE '%STORAGE%'"
+    description: "Storage charges only"
+
+sample_queries:
+  - description: "Charges by type last 30 days"
+    sql: |
+      SELECT INVCDESCR,
+        COUNT(*) as ChargeCount,
+        SUM(Amount) as TotalAmount,
+        AVG(Amount) as AvgAmount
+      FROM rpt.vw_E_StorageCharges
+      WHERE SHIPDATETIME >= DATEADD(day, -30, GETDATE())
+      GROUP BY INVCDESCR
+      ORDER BY TotalAmount DESC
+
+  - description: "Total charges by order"
+    sql: |
+      SELECT SONO, Storage,
+        SUM(Amount) as TotalCharges
+      FROM rpt.vw_E_StorageCharges
+      WHERE SHIPDATETIME >= DATEADD(day, -30, GETDATE())
+      GROUP BY SONO, Storage
+      ORDER BY TotalCharges DESC
+
+notes: |
+  - Contains more than just storage charges - marketing promos, brokerage, etc.
+  - Join to shipments on SONO for customer/product context
+  - Amount is per charge line, not per carton
+  - ~207K rows - always filter by SHIPDATETIME
+
+_sample_data:
+- source_database: LP
+  Storage: COBBLE SANGER
+  INVCDESCR: MARKETING PROMO
+  Amount: '1.530000'
+  SONO: '389786'
+  SHIPDATETIME: '2025-03-14 00:00:00'
+- source_database: LP
+  Storage: COBBLE SANGER
+  INVCDESCR: MARKETING PROMO
+  Amount: '0.480000'
+  SONO: '389828'
+  SHIPDATETIME: '2025-03-18 00:00:00'
+- source_database: LP
+  Storage: COBBLE SANGER
+  INVCDESCR: BROKERAGE BY SHIPPER
+  Amount: '600.000000'
+  SONO: '376150'
+  SHIPDATETIME: '2024-12-28 00:00:00'

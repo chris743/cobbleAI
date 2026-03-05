@@ -1,0 +1,58 @@
+domain: repacking
+description: |
+  Repacking/packing transactions that transform LP inventory.
+  Covers both packing entries (bulk bins -> processed bins) and repacking
+  (bins -> cartons, cartons -> cartons, cartons -> bins, bins -> bins).
+
+  All data is LP system. Each repack "run" has inputs consumed and outputs created.
+
+  Key distinction:
+  - Packing entry: Creates NEW LP inventory from CF bulk bins (outputs only)
+  - Repack entry: Transforms EXISTING LP inventory (inputs AND outputs)
+
+views:
+- name: rpt.vw_IC_Repack_Run_Summary
+  system: LP
+  description: "Detailed repack run data with input/output quantities by tag and product."
+  use_for:
+    - Repack run detail analysis
+    - Input/output tracking per bin tag
+    - Days-in-storage analysis
+
+- name: rpt.vw_IC_REPACKING_OutputByRun
+  system: LP
+  description: "Repack outputs aggregated by run. What was produced from each run."
+  use_for:
+    - Repack production reporting
+    - Output volume by product/style
+    - Yield analysis
+
+- name: rpt.vw_RepackLabor_CellAreaAllocated
+  system: UKG
+  description: "Labor data with cost allocation across packing line cells and facilities."
+  use_for:
+    - Repack labor cost allocation
+    - Cell-level cost analysis
+    - Facility cost comparison (Sanger vs Reedley)
+
+key_concepts:
+  - name: Repack Run (ICRUNIDX)
+    description: |
+      A repack run is a single production event. Identified by ICRUNIDX.
+      Each run has inputs (bins/cartons consumed) and outputs (cartons/bins produced).
+      The Run Summary view has one row per input tag per run.
+      The OutputByRun view has one row per output product per run.
+
+  - name: Packing Line Cells
+    description: |
+      A/B cells are physical packing line cells at the Sanger facility.
+      C cell is an additional cell at Sanger.
+      Reedley is a separate facility.
+      Labor costs are allocated across these cells/facilities.
+
+common_joins:
+  - description: "Join run summary to outputs by ICRUNIDX"
+    sql: |
+      SELECT s.ICRUNIDX, s.RUNDATE, s.Input_ICQNT, o.Output, o.Style
+      FROM rpt.vw_IC_Repack_Run_Summary s
+      JOIN rpt.vw_IC_REPACKING_OutputByRun o ON s.ICRUNIDX = o.ICRUNIDX

@@ -1,0 +1,413 @@
+# Schema documentation for dbo.VW_PRODUCTS
+# Full product master table - Both CF and LP systems
+
+name: dbo.VW_PRODUCTS
+short_name: VW_PRODUCTS
+schema: dbo
+domain: products
+system: Both
+
+description: |
+  Full product master. Every unique combination of commodity/variety/style/grade/size/label/method/region/storage/color.
+  Contains records from BOTH Cobblestone and LP systems (check source_database).
+
+  Each product is a specific SKU-level definition. Products are referenced by ProductIdx
+  throughout the system (inventory, sales, shipments, repacking).
+
+  Very large table (~38K rows) - most products are inactive historical records.
+
+business_purpose: |
+  - Master reference for all product definitions across both systems
+  - Resolve ProductIdx to full product attributes (commodity, grade, size, style, etc.)
+  - Provide pallet configuration (UnitsPerPallet) for logistics
+  - Supply carton equivalent factors (EQUIVFACTOR) for unit conversion
+
+row_count_approx: 38721
+refresh_frequency: "Real-time sync from source systems"
+
+columns:
+  # === IDENTIFICATION ===
+  - name: ProductIdx
+    type: int
+    nullable: false
+    description: "Primary key. Product index. Join target for PRODUCTIDX columns throughout the system."
+
+  - name: source_database
+    type: nvarchar(20)
+    nullable: false
+    description: "Source system: 'COBBLESTONE' or 'LP'. Determines which system's data this product belongs to."
+
+  - name: Id
+    type: nvarchar(50)
+    nullable: true
+    description: |
+      Product ID code string (e.g., 'LEEUCT075FA', 'GRSTCT023CH').
+      Compact code encoding commodity, variety, style, size, grade.
+
+  - name: IcType
+    type: nvarchar(50)
+    nullable: true
+    description: "Inventory control type. '1' = standard product."
+
+  - name: UPC
+    type: nvarchar(50)
+    nullable: true
+    description: "Universal Product Code (barcode). May be null for non-retail products."
+
+  - name: InactiveFlag
+    type: nvarchar(1)
+    nullable: true
+    description: "'N' = active product, 'Y' = inactive/discontinued."
+
+  - name: PLU
+    type: nvarchar(50)
+    nullable: true
+    description: "Price Look-Up code. Retail produce sticker code."
+
+  - name: Harmonize
+    type: nvarchar(50)
+    nullable: true
+    description: "Harmonized tariff code. Used for international/export shipments."
+
+  - name: BulkFlag
+    type: nvarchar(1)
+    nullable: true
+    description: "'Y' = bulk product (bins), 'N' = packed product (cartons/bags)."
+
+  # === LOGISTICS ===
+  - name: UnitsPerPallet
+    type: int
+    nullable: true
+    description: "Number of units (cartons/bags) per pallet for this product. Used for pallet count calculations."
+
+  - name: UnitsPerMinute
+    type: int
+    nullable: true
+    description: "Packing line throughput rate. Units produced per minute. 0 if not applicable."
+
+  # === DESCRIPTIONS ===
+  - name: ProductDescr
+    type: nvarchar(255)
+    nullable: true
+    description: "Internal product description (e.g., 'LEMON CTN FANCY 075'). Used in operational displays."
+
+  - name: InvcDescr
+    type: nvarchar(255)
+    nullable: true
+    description: "Invoice description (e.g., 'LEMON CARTON FANCY 075'). Customer-facing name on invoices."
+
+  - name: GwrProductDescr
+    type: nvarchar(255)
+    nullable: true
+    description: "Grower product description (e.g., 'LEMON CARTON FANCY 075'). Used on grower settlement reports."
+
+  # === COMMODITY (Name + Idx pairs) ===
+  - name: Commodity
+    type: nvarchar(50)
+    nullable: true
+    description: "Short commodity name (e.g., 'LEMON', 'GRAPEFRUIT')."
+
+  - name: CmtyInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice commodity name (e.g., 'LEMON', 'GRAPEFRUIT RED')."
+
+  - name: CmtyIdx
+    type: int
+    nullable: true
+    description: "Commodity index. Join to VW_LP_COMMODITIES or VW_CF_COMMODITIES based on source_database."
+
+  # === VARIETY ===
+  - name: Variety
+    type: nvarchar(50)
+    nullable: true
+    description: "Short variety name (e.g., 'EUREKA', 'STAR')."
+
+  - name: VrtyInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice variety name."
+
+  - name: VarietyIdx
+    type: int
+    nullable: true
+    description: "Variety index."
+
+  # === STYLE ===
+  - name: Style
+    type: nvarchar(50)
+    nullable: true
+    description: |
+      Pack style - defines packaging format and determines equipment line.
+      Style codes contain a suffix indicating bag type: FB = Film Bags,
+      CB = Combo Bags, NB = Net Bags, WM = Wicketed Mesh Bags, HD = Header Bags.
+      All other styles (CTN, BIN, 10# CARTON, etc.) are Bulk.
+      Examples: 'CTN' (bulk), '8-3lb BAG FB' (film bags), '9-3# FB' (film bags).
+
+  - name: StyleInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice style name (e.g., 'CARTON', 'CTN')."
+
+  - name: StyleOrderBy
+    type: nvarchar(50)
+    nullable: true
+    description: "Sort order for style in reports."
+
+  - name: StyleIdx
+    type: int
+    nullable: true
+    description: "Style index."
+
+  # === GRADE ===
+  - name: Grade
+    type: nvarchar(50)
+    nullable: true
+    description: "Quality grade (e.g., 'FANCY', 'CHOICE', 'EXP FANCY', 'JUICE')."
+
+  - name: GradeInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice grade name."
+
+  - name: GradeOrderBy
+    type: nvarchar(50)
+    nullable: true
+    description: "Sort order for grade in reports."
+
+  - name: GradeIdx
+    type: int
+    nullable: true
+    description: "Grade index."
+
+  # === SIZE ===
+  - name: SizeName
+    type: nvarchar(50)
+    nullable: true
+    description: "Fruit size code (e.g., '075', '140', '023'). Count per standard carton. Always zero-padded to 3 digits."
+
+  - name: SizeInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice size name. Usually matches SizeName."
+
+  - name: SizeOrderBy
+    type: nvarchar(50)
+    nullable: true
+    description: "Sort order for size in reports."
+
+  - name: SizeIdx
+    type: int
+    nullable: true
+    description: "Size index."
+
+  # === UNIT OF MEASURE ===
+  - name: Uom
+    type: nvarchar(50)
+    nullable: true
+    description: "Unit of measure (e.g., 'ctn' = carton)."
+
+  - name: UOMIdx
+    type: int
+    nullable: true
+    description: "Unit of measure index."
+
+  # === LABEL ===
+  - name: Label
+    type: nvarchar(50)
+    nullable: true
+    description: "Label/brand/PLU label info."
+
+  - name: LabelInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice label name."
+
+  - name: LabelIdx
+    type: int
+    nullable: true
+    description: "Label index. 0 = no specific label."
+
+  # === METHOD ===
+  - name: Method
+    type: nvarchar(50)
+    nullable: true
+    description: "Packing method code (e.g., 'CPK F CT MFC'). Encoding of packing specifications."
+
+  - name: MethodInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice method name."
+
+  - name: MethodIdx
+    type: int
+    nullable: true
+    description: "Method index. 0 = no specific method."
+
+  # === REGION ===
+  - name: Region
+    type: nvarchar(50)
+    nullable: true
+    description: "Origin region (e.g., 'USA - CA')."
+
+  - name: RegionInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice region name."
+
+  - name: RegionIdx
+    type: int
+    nullable: true
+    description: "Region index. 0 = not specified."
+
+  # === STORAGE ===
+  - name: Storage
+    type: nvarchar(50)
+    nullable: true
+    description: "Storage location code."
+
+  - name: StgInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice storage name."
+
+  - name: StorageIdx
+    type: int
+    nullable: true
+    description: "Storage index. 0 = not specified."
+
+  # === COLOR ===
+  - name: Color
+    type: nvarchar(50)
+    nullable: true
+    description: "Color attribute."
+
+  - name: ColorInvc
+    type: nvarchar(50)
+    nullable: true
+    description: "Invoice color name."
+
+  - name: ColorIdx
+    type: int
+    nullable: true
+    description: "Color index. 0 = not specified."
+
+  # === CONVERSION ===
+  - name: EQUIVFACTOR
+    type: float
+    nullable: true
+    description: |
+      Standard carton equivalent factor. Converts this product's unit to standard cartons.
+      Examples: CTN = 1.0, BIN = 23.2 (citrus) or 37.5 (mandarins).
+      For non-standard packs: 10# carton = 0.25 std ctns.
+      0.0 may indicate not yet configured.
+
+  # === SYNC ===
+  - name: SyncDateTime
+    type: datetime
+    nullable: true
+    description: "Last sync timestamp from source system."
+
+  - name: SyncStatus
+    type: nvarchar(1)
+    nullable: true
+    description: "Sync status. 'E' = synced/exported."
+
+  - name: RowVer
+    type: timestamp
+    nullable: false
+    description: "Row version for concurrency/change tracking. Binary timestamp."
+
+relationships:
+  - target: dbo.VW_LP_COMMODITIES
+    join_column: CmtyIdx
+    target_column: CommodityIDx
+    cardinality: many-to-one
+    note: "For LP products (source_database = 'LP')"
+
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CmtyIdx
+    target_column: CommodityIDx
+    cardinality: many-to-one
+    note: "For CF products (source_database = 'COBBLESTONE')"
+
+common_filters:
+  - column: InactiveFlag
+    operation: "= 'N'"
+    description: "Active products only"
+
+  - column: source_database
+    operation: "= 'LP'"
+    description: "LP products only"
+
+  - column: BulkFlag
+    operation: "= 'N'"
+    description: "Packed products only (not bins)"
+
+sample_queries:
+  - description: "Lookup product by idx"
+    sql: |
+      SELECT ProductIdx, ProductDescr, Commodity, Style, Grade, SizeName,
+        EQUIVFACTOR, UnitsPerPallet
+      FROM dbo.VW_PRODUCTS
+      WHERE ProductIdx = 2546
+
+  - description: "All active LP carton products for a commodity"
+    sql: |
+      SELECT ProductIdx, ProductDescr, Grade, SizeName, Style, EQUIVFACTOR
+      FROM dbo.VW_PRODUCTS
+      WHERE source_database = 'LP'
+        AND InactiveFlag = 'N'
+        AND Commodity = 'LEMON'
+        AND BulkFlag = 'N'
+      ORDER BY Grade, SizeName
+
+notes: |
+  - VERY LARGE table (~38K rows) - always filter by InactiveFlag and/or source_database
+  - Contains BOTH CF and LP products - check source_database before joining to commodity tables
+  - *Invc columns are invoice/customer-facing display names
+  - *OrderBy columns are sort order values for report presentation
+  - *Idx columns are numeric indexes for joining to sub-dimension tables
+  - EQUIVFACTOR converts product units to standard cartons (40lb for citrus, 25lb for mandarins)
+  - Most queries should use ProductDescr or the individual attribute columns, not the Id code
+
+_sample_data:
+- ProductIdx: '2546'
+  source_database: COBBLESTONE
+  Id: LEEUCT075FA
+  IcType: '1'
+  InactiveFlag: N
+  BulkFlag: N
+  UnitsPerPallet: '54'
+  UnitsPerMinute: '0'
+  ProductDescr: LEMON CTN FANCY 075
+  InvcDescr: LEMON CARTON FANCY 075
+  GwrProductDescr: LEMON CARTON FANCY 075
+  Commodity: LEMON
+  CmtyInvc: LEMON
+  CmtyIdx: '4'
+  Variety: EUREKA
+  VrtyInvc: EUREKA
+  VarietyIdx: '33'
+  Style: CTN
+  StyleInvc: CARTON
+  StyleOrderBy: '1.0'
+  StyleIdx: '7'
+  Grade: FANCY
+  GradeInvc: FANCY
+  GradeOrderBy: '3.0'
+  GradeIdx: '1'
+  SizeName: '075'
+  SizeInvc: '075'
+  SizeOrderBy: '2.0'
+  SizeIdx: '44'
+  Uom: ctn
+  UOMIdx: '25'
+  LabelIdx: '0'
+  MethodIdx: '0'
+  RegionIdx: '0'
+  StorageIdx: '0'
+  ColorIdx: '0'
+  EQUIVFACTOR: '0.0'
+  SyncDateTime: '2026-03-04 09:00:03.103000'
+  SyncStatus: E

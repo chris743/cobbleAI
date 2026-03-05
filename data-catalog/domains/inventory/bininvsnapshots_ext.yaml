@@ -1,0 +1,216 @@
+# Schema documentation for dbo.BININVSNAPSHOTS_EXT
+# Daily inventory snapshots for historical analysis - LP system
+
+name: dbo.BININVSNAPSHOTS_EXT
+short_name: BININVSNAPSHOTS_EXT
+schema: dbo
+domain: inventory
+system: LP
+
+description: |
+  Daily point-in-time inventory snapshots. Pre-aggregated by product attributes.
+  Use for historical inventory analysis, trends, and "what did we have on [date]?" queries.
+  
+  Unlike VW_BININVENTORY (which shows individual bin tags), this view is aggregated
+  by Warehouse/Commodity/Grade/Size/Product - one row per unique combination per day.
+
+business_purpose: |
+  - Historical inventory reporting
+  - Inventory trend analysis over time
+  - Week-over-week / month-over-month comparisons
+  - Identifying inventory build-up or depletion patterns
+  - Auditing inventory positions as of a specific date
+
+row_count_approx: 10878
+refresh_frequency: "Daily snapshot taken ~4pm UTC (see SnapshotTakenAtUtc)"
+
+columns:
+  # === SNAPSHOT TIMING ===
+  - name: SnapshotDate
+    type: date
+    nullable: false
+    description: |
+      Business date of the snapshot. Primary date field for filtering/grouping.
+      One snapshot per day per product combination.
+
+  - name: SnapshotTakenAtUtc
+    type: datetime2
+    nullable: false
+    description: |
+      Exact UTC timestamp when snapshot was captured.
+      Useful for understanding timing (e.g., snapshots taken ~4pm UTC / ~8am PST).
+
+  # === LOCATION ===
+  - name: Warehouse
+    type: nvarchar(100)
+    nullable: true
+    description: "Warehouse location name (e.g., 'COBBLESTONE SANGER')."
+
+  # === PRODUCT ATTRIBUTES ===
+  - name: ProductIdx
+    type: int
+    nullable: true
+    description: "Product index. Join to VW_PRODUCTS on productidx for full product details."
+
+  - name: CmtyIdx
+    type: int
+    nullable: true
+    description: |
+      Commodity index (LP system). Join to VW_LP_COMMODITIES on commodityidx.
+      Note: Column name abbreviated as 'CmtyIdx' not 'CommodityIdx'.
+
+  - name: Commodity
+    type: nvarchar(100)
+    nullable: true
+    description: "Commodity name (e.g., 'LEMON', 'GRAPEFRUIT'). Denormalized."
+
+  - name: Grade
+    type: nvarchar(50)
+    nullable: true
+    description: |
+      Quality grade (e.g., 'FANCY', 'CHOICE', 'EXP FANCY').
+      See glossary for grade definitions.
+
+  - name: Size
+    type: nvarchar(50)
+    nullable: true
+    description: |
+      Fruit size code. Count per standard carton.
+      Stored as zero-padded 3-digit string (e.g., '088' not '88'). Always pad user input to 3 digits.
+      Examples: '023' (large grapefruit), '165' (lemons).
+
+  - name: ProductSizeName
+    type: nvarchar(50)
+    nullable: true
+    description: "Size name from product master. Usually matches Size column."
+
+  - name: Style
+    type: nvarchar(50)
+    nullable: true
+    description: "Pack style. Typically 'BIN' for bin inventory snapshots."
+
+  - name: Color
+    type: nvarchar(50)
+    nullable: true
+    description: "Color attribute. Typically 'BIN' for bin inventory."
+
+  - name: Region
+    type: nvarchar(50)
+    nullable: true
+    description: "Origin region (e.g., 'USA - CA')."
+
+  # === QUANTITIES ===
+  - name: Quantity
+    type: decimal(18,2)
+    nullable: true
+    description: |
+      Total bin quantity for this product combination on this date.
+      This is the primary inventory measure - sum of all matching bins.
+      Can be fractional (e.g., 3.50 bins, 103.20 bins).
+
+  - name: BinEquivalent
+    type: float
+    nullable: true
+    description: |
+      Cartons per bin for this product. Conversion factor.
+      Standard: 23.2 for most citrus, 37.5 for mandarins (25lb std).
+      Note: This is the conversion RATE, not a quantity.
+
+  - name: ctnqty
+    type: float
+    nullable: true
+    description: |
+      Total carton equivalent quantity. Pre-calculated.
+      Formula: Quantity × BinEquivalent
+      USE THIS for carton-based reporting and trending.
+
+relationships:
+  - target: dbo.VW_LP_COMMODITIES
+    join_column: CmtyIdx
+    target_column: commodityidx
+    cardinality: many-to-one
+    note: "Commodity details - note column is CmtyIdx not CommodityIdx"
+
+  - target: dbo.VW_PRODUCTS
+    join_column: ProductIdx
+    target_column: productidx
+    cardinality: many-to-one
+    note: "Full product master details"
+
+common_filters:
+  - column: SnapshotDate
+    operation: "= '2025-11-05'"
+    description: "Specific date snapshot"
+
+  - column: SnapshotDate
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days of snapshots"
+
+  - column: Commodity
+    operation: "= 'LEMON'"
+    description: "Filter to specific commodity"
+
+  - column: Quantity
+    operation: "> 0"
+    description: "Only products with inventory"
+
+sample_queries:
+  - description: "Inventory on a specific date by commodity"
+    sql: |
+      SELECT 
+        Commodity,
+        SUM(Quantity) as TotalBins,
+        SUM(ctnqty) as TotalCartons
+      FROM dbo.BININVSNAPSHOTS_EXT
+      WHERE SnapshotDate = '2025-11-05'
+      GROUP BY Commodity
+      ORDER BY TotalBins DESC
+
+  - description: "Inventory trend over last 30 days"
+    sql: |
+      SELECT 
+        SnapshotDate,
+        Commodity,
+        SUM(Quantity) as TotalBins,
+        SUM(ctnqty) as TotalCartons
+      FROM dbo.BININVSNAPSHOTS_EXT
+      WHERE SnapshotDate >= DATEADD(day, -30, GETDATE())
+      GROUP BY SnapshotDate, Commodity
+      ORDER BY SnapshotDate, Commodity
+
+  - description: "Week-over-week inventory comparison"
+    sql: |
+      SELECT 
+        Commodity,
+        Grade,
+        Size,
+        SUM(CASE WHEN SnapshotDate = CAST(GETDATE() AS DATE) THEN Quantity ELSE 0 END) as Today,
+        SUM(CASE WHEN SnapshotDate = CAST(DATEADD(day, -7, GETDATE()) AS DATE) THEN Quantity ELSE 0 END) as OneWeekAgo
+      FROM dbo.BININVSNAPSHOTS_EXT
+      WHERE SnapshotDate IN (CAST(GETDATE() AS DATE), CAST(DATEADD(day, -7, GETDATE()) AS DATE))
+      GROUP BY Commodity, Grade, Size
+
+  - description: "Detailed inventory for specific commodity/grade on date"
+    sql: |
+      SELECT 
+        SnapshotDate,
+        Warehouse,
+        Commodity,
+        Grade,
+        Size,
+        Quantity as Bins,
+        ctnqty as Cartons
+      FROM dbo.BININVSNAPSHOTS_EXT
+      WHERE SnapshotDate = '2025-11-05'
+        AND Commodity = 'LEMON'
+        AND Grade = 'CHOICE'
+      ORDER BY Size
+
+notes: |
+  - Data is PRE-AGGREGATED by product attributes - no individual bin tags
+  - Use VW_BININVENTORY for current real-time inventory with bin-level detail
+  - Use this view for historical analysis and trending
+  - BinEquivalent is the conversion RATE (ctns per bin), not a quantity
+  - ctnqty is pre-calculated (Quantity × BinEquivalent) - use it directly
+  - CmtyIdx column name is abbreviated (not CommodityIdx)
+  - No grower/block traceability in this view - it's product-level aggregation only

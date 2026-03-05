@@ -1,0 +1,380 @@
+entries:
+- timestamp: '2026-03-04T00:00:00'
+  question: Current inventory by commodity, size, grade
+  sql: "SELECT \n  Commodity,\n  Size,\n  Grade,\n  SUM(AvailableQuantity) as TotalBins,\n\
+    \  SUM(equivctns) as TotalCartonEquiv\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity\
+    \ > 0\nGROUP BY Commodity, Size, Grade\nORDER BY Commodity, Size, Grade\n"
+  notes: Use equivctns for carton equivalent - it's pre-calculated and handles partial
+    bins
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  question: Inventory by pool
+  sql: "SELECT \n  l.GALOTIDX as PoolCode,\n  i.Commodity,\n  SUM(i.AvailableQuantity)\
+    \ as TotalBins,\n  SUM(i.equivctns) as TotalCartonEquiv\nFROM dbo.VW_BININVENTORY\
+    \ i\nJOIN dbo.VW_LP_LOTS l ON i.LotIDx = l.lotidx\nWHERE i.AvailableQuantity >\
+    \ 0\nGROUP BY l.GALOTIDX, i.Commodity\n"
+  notes: Pool code is in GALOTIDX (Grower Accounting Lot ID), not LotID
+  verified: true
+- timestamp: '2026-03-04T00:00:00'
+  question: Inventory trend over time
+  sql: "SELECT \n  SnapshotDate,\n  Commodity,\n  SUM(Quantity) as TotalBins,\n  SUM(ctnqty)\
+    \ as TotalCartons\nFROM dbo.BININVSNAPSHOTS_EXT\nWHERE SnapshotDate >= DATEADD(day,\
+    \ -30, GETDATE())\nGROUP BY SnapshotDate, Commodity\nORDER BY SnapshotDate, Commodity\n"
+  notes: Use BININVSNAPSHOTS_EXT for historical data, not VW_BININVENTORY
+  verified: true
+- timestamp: '2026-03-04T11:56:07.892597'
+  question: How many bins of specific size/grade navels are in inventory
+  sql: "SELECT \n    Size, Grade,\n    SUM(AvailableQuantity) as TotalBins,\n    SUM(equivctns)\
+    \ as TotalCartonEquiv\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity > 0\n\
+    \  AND Commodity = 'NAVEL'\n  AND Size = '88'\n  AND Grade = 'FANCY'\nGROUP BY\
+    \ Size, Grade"
+  notes: Standard inventory query pattern. Always filter AvailableQuantity > 0 for
+    active inventory. Use equivctns for carton equivalents (pre-calculated). Size
+    is just the number as string.
+  verified: false
+- timestamp: '2026-03-04T12:02:25.137956'
+  question: how many bins of specific size and grade are in current inventory
+  sql: "SELECT \n    Commodity, Size, Grade,\n    SUM(AvailableQuantity) as TotalBins,\n\
+    \    SUM(equivctns) as TotalCartonEquiv\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity\
+    \ > 0\n  AND Commodity = 'NAVEL'\n  AND Size = '088'\n  AND Grade = 'FANCY'\n\
+    GROUP BY Commodity, Size, Grade"
+  notes: Standard inventory query pattern. Always filter AvailableQuantity > 0 for
+    active inventory. Use equivctns for carton equivalent (pre-calculated). Size is
+    stored as string.
+  verified: true
+- timestamp: '2026-03-04T13:36:41.462444'
+  question: How many bins of specific size/grade/commodity do I have?
+  sql: "SELECT \n    Commodity, Size, Grade,\n    SUM(AvailableQuantity) as TotalBins,\n\
+    \    SUM(equivctns) as TotalCartonEquiv\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity\
+    \ > 0\n  AND Commodity = 'NAVEL'\n  AND Size = '088'\n  AND Grade = 'FANCY'\n\
+    GROUP BY Commodity, Size, Grade"
+  notes: Size must be 3-digit format with leading zeros. Use equivctns for carton
+    equivalents.
+  verified: true
+- timestamp: '2026-03-04T13:39:43.431711'
+  question: Full navel inventory as pivot table with size on x-axis and grade on y-axis
+  sql: "SELECT \n    Grade,\n    SUM(CASE WHEN Size = '032' THEN equivctns ELSE 0\
+    \ END) as [032],\n    SUM(CASE WHEN Size = '036' THEN equivctns ELSE 0 END) as\
+    \ [036],\n    SUM(CASE WHEN Size = '040' THEN equivctns ELSE 0 END) as [040],\n\
+    \    SUM(CASE WHEN Size = '048' THEN equivctns ELSE 0 END) as [048],\n    SUM(CASE\
+    \ WHEN Size = '056' THEN equivctns ELSE 0 END) as [056],\n    SUM(CASE WHEN Size\
+    \ = '072' THEN equivctns ELSE 0 END) as [072],\n    SUM(CASE WHEN Size = '088'\
+    \ THEN equivctns ELSE 0 END) as [088],\n    SUM(CASE WHEN Size = '113' THEN equivctns\
+    \ ELSE 0 END) as [113],\n    SUM(CASE WHEN Size = '138' THEN equivctns ELSE 0\
+    \ END) as [138],\n    SUM(CASE WHEN Size = '163' THEN equivctns ELSE 0 END) as\
+    \ [163],\n    SUM(equivctns) as Total\nFROM dbo.VW_BININVENTORY b\nJOIN dbo.VW_LP_COMMODITIES\
+    \ c ON b.commodityidx = c.commodityidx\nWHERE b.AvailableQuantity > 0\n  AND c.Commodity\
+    \ = 'NAVEL'\nGROUP BY Grade\nORDER BY Grade"
+  notes: Uses equivctns for carton equivalent quantities. Joins LP inventory to LP
+    commodities table. Filters for active inventory (AvailableQuantity > 0).
+  verified: true
+- timestamp: '2026-03-04T13:41:50.007664'
+  question: Full navel inventory as a pivot table with size on the x and grade on
+    the y showing bin quantities
+  sql: "WITH NavelInventory AS (\n    SELECT \n        Grade,\n        Size,\n   \
+    \     SUM(AvailableQuantity) as BinQuantity\n    FROM dbo.VW_BININVENTORY\n  \
+    \  WHERE AvailableQuantity > 0\n      AND Commodity = 'NAVEL'\n    GROUP BY Grade,\
+    \ Size\n)\nSELECT \n    Grade,\n    ISNULL([032], 0) AS '32',\n    ISNULL([036],\
+    \ 0) AS '36', \n    ISNULL([040], 0) AS '40',\n    ISNULL([048], 0) AS '48',\n\
+    \    ISNULL([056], 0) AS '56',\n    ISNULL([072], 0) AS '72',\n    ISNULL([088],\
+    \ 0) AS '88',\n    ISNULL([113], 0) AS '113',\n    ISNULL([138], 0) AS '138',\n\
+    \    ISNULL([163], 0) AS '163'\nFROM NavelInventory\nPIVOT (\n    SUM(BinQuantity)\
+    \ \n    FOR Size IN ([032], [036], [040], [048], [056], [072], [088], [113], [138],\
+    \ [163])\n) AS PivotTable\nORDER BY Grade"
+  notes: Uses PIVOT to create cross-tab format. Size values are stored with 3-digit
+    format (032, 036, etc.) in the database but displayed without leading zeros in
+    column headers for readability.
+  verified: false
+- timestamp: '2026-03-04T13:44:53.626814'
+  question: Show navel orange available quantity as pivot table with grade on Y-axis
+    and size on X-axis
+  sql: "SELECT \n    Grade,\n    [008] as \"8\",\n    [014] as \"14\", \n    [018]\
+    \ as \"18\",\n    [024] as \"24\",\n    [032] as \"32\",\n    [040] as \"40\"\
+    ,\n    [048] as \"48\",\n    [056] as \"56\",\n    [072] as \"72\",\n    [088]\
+    \ as \"88\",\n    [113] as \"113\",\n    [125] as \"125\",\n    [138] as \"138\"\
+    ,\n    [163] as \"163\",\n    [200] as \"200\"\nFROM (\n    SELECT \n        ISNULL(Grade,\
+    \ 'NO GRADE') as Grade,\n        Size,\n        SUM(AvailableQuantity) as TotalBins\n\
+    \    FROM dbo.VW_BININVENTORY\n    WHERE AvailableQuantity > 0\n      AND Commodity\
+    \ = 'NAVEL'\n    GROUP BY Grade, Size\n) src\nPIVOT (\n    SUM(TotalBins)\n  \
+    \  FOR Size IN ([008], [014], [018], [024], [032], [040], [048], [056], [072],\
+    \ [088], [113], [125], [138], [163], [200])\n) piv\nORDER BY \n    CASE Grade\n\
+    \        WHEN 'FANCY' THEN 1\n        WHEN 'EXP FANCY' THEN 2\n        WHEN 'CHOICE'\
+    \ THEN 3\n        WHEN 'EXP CHOICE' THEN 4\n        WHEN 'JUICE' THEN 5\n    \
+    \    ELSE 6\n    END"
+  notes: Uses PIVOT to create matrix view of inventory. Handles 3-digit size format
+    with leading zeros. Orders grades by market value hierarchy.
+  verified: false
+- timestamp: '2026-03-04T13:50:10.275194'
+  question: What sizes are available for navels?
+  sql: "SELECT DISTINCT Size\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity >\
+    \ 0\n  AND Commodity = 'NAVEL'\nORDER BY Size"
+  notes: Shows all current navel sizes in inventory. Size values are 3-digit strings
+    with leading zeros. ORDER BY Size works for string sorting since they're all same
+    format.
+  verified: false
+- timestamp: '2026-03-04T13:53:57.722522'
+  question: How many fancy 88s do I have on hand
+  sql: "SELECT \n    Commodity, \n    Size, \n    Grade,\n    SUM(AvailableQuantity)\
+    \ as TotalBins,\n    SUM(equivctns) as TotalCartonEquiv\nFROM dbo.VW_BININVENTORY\n\
+    WHERE AvailableQuantity > 0\n  AND Size = '088'\n  AND Grade = 'FANCY'\nGROUP\
+    \ BY Commodity, Size, Grade\nORDER BY Commodity"
+  notes: Standard inventory query pattern. Size must be zero-padded to 3 digits ('088'
+    not '88'). Always filter AvailableQuantity > 0 for active inventory. Use equivctns
+    for carton equivalent.
+  verified: false
+- timestamp: '2026-03-04T13:54:39.644217'
+  question: How many fancy 88 navels do I have on hand?
+  sql: "SELECT \n    Commodity, Size, Grade,\n    SUM(AvailableQuantity) as TotalBins,\n\
+    \    SUM(equivctns) as TotalCartonEquiv\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity\
+    \ > 0\n  AND Commodity = 'NAVEL'\n  AND Size = '088'\n  AND Grade = 'FANCY'\n\
+    GROUP BY Commodity, Size, Grade"
+  notes: Standard inventory query pattern. Size must be padded to 3 digits ('088').
+    Always filter AvailableQuantity > 0 for active inventory. Use equivctns for carton
+    equivalents.
+  verified: true
+- timestamp: '2026-03-04T13:58:20.750147'
+  question: How many fancy 88 navels do I have on hand?
+  sql: "SELECT \n    Commodity,\n    Size,\n    Grade,\n    SUM(AvailableQuantity)\
+    \ as TotalBins,\n    SUM(equivctns) as TotalCartonEquivalent\nFROM dbo.VW_BININVENTORY\n\
+    WHERE AvailableQuantity > 0\n  AND Commodity = 'NAVEL'\n  AND Size = '088'\n \
+    \ AND Grade = 'FANCY'\nGROUP BY Commodity, Size, Grade"
+  notes: 'Standard inventory query pattern. Key points: Use ''NAVEL'' commodity, zero-pad
+    size to ''088'', filter AvailableQuantity > 0, use equivctns for carton equivalent'
+  verified: false
+- timestamp: '2026-03-04T14:21:15.837635'
+  question: How many fancy 88 navels do I have on hand
+  sql: "SELECT \n    Commodity, Size, Grade,\n    SUM(AvailableQuantity) as TotalBins,\n\
+    \    SUM(equivctns) as TotalCartonEquiv\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity\
+    \ > 0\n  AND Commodity = 'NAVEL'\n  AND Size = '088'\n  AND Grade = 'FANCY'\n\
+    GROUP BY Commodity, Size, Grade"
+  notes: Standard inventory query pattern. Size must be zero-padded to 3 digits. Always
+    filter AvailableQuantity > 0. Use equivctns for carton equivalent.
+  verified: true
+- timestamp: '2026-03-04T14:22:35.108553'
+  question: Navel inventory pivot table with size on x-axis and grade on y-axis
+  sql: "SELECT \n    Grade,\n    SUM(CASE WHEN Size = '036' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [036],\n    SUM(CASE WHEN Size = '040' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [040],\n    SUM(CASE WHEN Size = '048' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [048],\n    SUM(CASE WHEN Size = '056' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [056],\n    SUM(CASE WHEN Size = '064' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [064],\n    SUM(CASE WHEN Size = '072' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [072],\n    SUM(CASE WHEN Size = '080' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [080],\n    SUM(CASE WHEN Size = '088' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [088],\n    SUM(CASE WHEN Size = '100' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [100],\n    SUM(CASE WHEN Size = '113' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [113],\n    SUM(CASE WHEN Size = '125' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [125],\n    SUM(CASE WHEN Size = '138' THEN AvailableQuantity\
+    \ ELSE 0 END) AS [138],\n    SUM(AvailableQuantity) AS Total_Bins\nFROM dbo.VW_BININVENTORY\n\
+    WHERE AvailableQuantity > 0 \n  AND Commodity = 'NAVEL'\nGROUP BY Grade\nORDER\
+    \ BY Grade"
+  notes: Creates pivot table with size columns using CASE WHEN. Include standard sizes
+    036-138. Could be modified for other commodities or to show carton equivalents.
+  verified: true
+- timestamp: '2026-03-04T14:25:59.946846'
+  question: How many navels do I have on orders shipping today?
+  sql: "SELECT \n    SUM(ORDERQNT) as TotalUnits,\n    SUM(equivqnt) as TotalStdCartons,\n\
+    \    COUNT(*) as NumberOfOrderLines,\n    COUNT(DISTINCT CustomerName) as UniqueCustomers\n\
+    FROM dbo.VW_LPSALESORDERS\nWHERE Commodity = 'NAVEL'\n  AND CAST(SHIPDATETIME\
+    \ as DATE) = CAST(GETDATE() as DATE)\n  AND ORDERQNT > 0"
+  notes: Use SHIPDATETIME for shipping date filter and equivqnt for standardized volume.
+    Filter ORDERQNT > 0 to exclude canceled/zero lines.
+  verified: true
+- timestamp: '2026-03-04T14:30:20.089941'
+  question: per size and grade of navels do i have enough inventory to cover the orders
+    shipping today?
+  sql: "WITH TodaysOrders AS (\n    SELECT \n        SizeName,\n        Grade,\n \
+    \       SUM(ORDERQNT) as TotalUnitsOrdered,\n        SUM(equivqnt) as TotalStdCartonsOrdered,\n\
+    \        COUNT(DISTINCT CustomerName) as CustomerCount,\n        COUNT(*) as OrderLines\n\
+    \    FROM dbo.VW_LPSALESORDERS\n    WHERE Commodity = 'NAVEL'\n      AND CAST(SHIPDATETIME\
+    \ as DATE) = CAST(GETDATE() as DATE)\n      AND ORDERQNT > 0\n    GROUP BY SizeName,\
+    \ Grade\n),\nInventoryAvailable AS (\n    SELECT \n        Size,\n        Grade,\n\
+    \        SUM(AvailableQuantity) as TotalBins,\n        SUM(equivctns) as TotalStdCartonsAvailable\n\
+    \    FROM dbo.VW_BININVENTORY\n    WHERE Commodity = 'NAVEL'\n      AND AvailableQuantity\
+    \ > 0\n    GROUP BY Size, Grade\n)\nSELECT \n    COALESCE(o.SizeName, i.Size)\
+    \ as Size,\n    COALESCE(o.Grade, i.Grade) as Grade,\n    ISNULL(o.TotalStdCartonsOrdered,\
+    \ 0) as OrderedStdCartons,\n    ISNULL(i.TotalStdCartonsAvailable, 0) as AvailableStdCartons,\n\
+    \    ISNULL(i.TotalStdCartonsAvailable, 0) - ISNULL(o.TotalStdCartonsOrdered,\
+    \ 0) as NetPosition,\n    CASE \n        WHEN ISNULL(o.TotalStdCartonsOrdered,\
+    \ 0) = 0 THEN 'No orders'\n        WHEN ISNULL(i.TotalStdCartonsAvailable, 0)\
+    \ >= ISNULL(o.TotalStdCartonsOrdered, 0) THEN 'SUFFICIENT'\n        ELSE 'SHORT'\n\
+    \    END as Status,\n    o.CustomerCount,\n    o.OrderLines,\n    i.TotalBins\
+    \ as BinsAvailable\nFROM TodaysOrders o\n    FULL OUTER JOIN InventoryAvailable\
+    \ i ON o.SizeName = i.Size AND o.Grade = i.Grade\nORDER BY \n    CASE WHEN ISNULL(i.TotalStdCartonsAvailable,\
+    \ 0) < ISNULL(o.TotalStdCartonsOrdered, 0) THEN 0 ELSE 1 END,\n    Size, Grade"
+  notes: Compares today's navel orders by size/grade to available inventory. Uses
+    FULL OUTER JOIN to show both shortages and surplus inventory. Orders results with
+    shortages first.
+  verified: false
+- timestamp: '2026-03-04T14:43:31.875092'
+  question: Do I have enough inventory to cover unfulfilled orders shipping today
+    by size and grade?
+  sql: "WITH UnfulfilledOrders AS (\n    SELECT \n        SizeName,\n        Grade,\n\
+    \        SUM(ORDERQNT - RESERVEQNT) as UnfulfilledQty,\n        SUM((ORDERQNT\
+    \ - RESERVEQNT) * EQUIVFACTOR) as UnfulfilledEquivCtns,\n        COUNT(*) as OrderLineCount\n\
+    \    FROM dbo.VW_LPSALESORDERS\n    WHERE Commodity = 'NAVEL'\n      AND CAST(SHIPDATETIME\
+    \ AS DATE) = CAST(GETDATE() AS DATE)\n      AND ORDERQNT > RESERVEQNT\n      AND\
+    \ ORDERQNT > 0\n    GROUP BY SizeName, Grade\n),\nCurrentInventory AS (\n    SELECT\
+    \ \n        Size,\n        Grade,\n        SUM(AvailableQuantity) as TotalBins,\n\
+    \        SUM(equivctns) as TotalEquivCtns\n    FROM dbo.VW_BININVENTORY\n    WHERE\
+    \ Commodity = 'NAVEL'\n      AND AvailableQuantity > 0\n    GROUP BY Size, Grade\n\
+    )\nSELECT \n    COALESCE(u.SizeName, i.Size) as Size,\n    COALESCE(u.Grade, i.Grade)\
+    \ as Grade,\n    ISNULL(u.UnfulfilledQty, 0) as UnfulfilledOrderQty,\n    ISNULL(u.UnfulfilledEquivCtns,\
+    \ 0) as UnfulfilledEquivCtns,\n    ISNULL(u.OrderLineCount, 0) as UnfulfilledOrderLines,\n\
+    \    ISNULL(i.TotalBins, 0) as AvailableBins,\n    ISNULL(i.TotalEquivCtns, 0)\
+    \ as AvailableEquivCtns,\n    CASE \n        WHEN ISNULL(i.TotalEquivCtns, 0)\
+    \ >= ISNULL(u.UnfulfilledEquivCtns, 0) \n        THEN 'SUFFICIENT' \n        ELSE\
+    \ 'SHORTAGE'\n    END as InventoryStatus,\n    ISNULL(i.TotalEquivCtns, 0) - ISNULL(u.UnfulfilledEquivCtns,\
+    \ 0) as SurplusOrShortage\nFROM UnfulfilledOrders u\nFULL OUTER JOIN CurrentInventory\
+    \ i ON u.SizeName = i.Size AND u.Grade = i.Grade\nWHERE ISNULL(u.UnfulfilledQty,\
+    \ 0) > 0 OR ISNULL(i.TotalBins, 0) > 0\nORDER BY \n    CASE WHEN ISNULL(u.UnfulfilledQty,\
+    \ 0) > 0 THEN 1 ELSE 2 END,\n    Size, Grade"
+  notes: Compares unfulfilled orders (ORDERQNT > RESERVEQNT) shipping today against
+    current bin inventory by size/grade. Uses EQUIVFACTOR to normalize different pack
+    styles to standard cartons.
+  verified: false
+- timestamp: '2026-03-04T14:50:55.319003'
+  question: Analyze commodity shortages for the week and calculate bins needed using
+    14-day packout averages
+  sql: "WITH WeeklyShortages AS (\n    SELECT \n        o.Commodity,\n        o.SizeName,\n\
+    \        o.Grade,\n        ISNULL(o.UnfulfilledEquivCtns, 0) - ISNULL(i.TotalEquivCtns,\
+    \ 0) as ShortageEquivCtns\n    FROM (\n        SELECT \n            Commodity,\n\
+    \            SizeName,\n            Grade,\n            SUM(equivqnt - (RESERVEQNT\
+    \ * EQUIVFACTOR)) as UnfulfilledEquivCtns\n        FROM dbo.VW_LPSALESORDERS\n\
+    \        WHERE SHIPDATETIME >= CAST(GETDATE() AS DATE)\n          AND SHIPDATETIME\
+    \ < DATEADD(day, 7, CAST(GETDATE() AS DATE))\n          AND ORDERQNT > RESERVEQNT\n\
+    \          AND ORDERQNT > 0\n          AND Commodity IS NOT NULL\n        GROUP\
+    \ BY Commodity, SizeName, Grade\n    ) o\n    LEFT JOIN (\n        SELECT \n \
+    \           Commodity,\n            Size,\n            Grade,\n            SUM(equivctns)\
+    \ as TotalEquivCtns\n        FROM dbo.VW_BININVENTORY\n        WHERE AvailableQuantity\
+    \ > 0\n        GROUP BY Commodity, Size, Grade\n    ) i ON o.Commodity = i.Commodity\
+    \ AND o.SizeName = i.Size AND o.Grade = i.Grade\n    WHERE ISNULL(o.UnfulfilledEquivCtns,\
+    \ 0) > ISNULL(i.TotalEquivCtns, 0)\n),\nPackoutPercentages AS (\n    SELECT \n\
+    \        Commodity,\n        SizeName,\n        Grade,\n        pct_of_commodity\n\
+    \    FROM dbo.VW_14DAYAVGPACKOUT\n    WHERE pct_of_commodity > 0\n),\nBinCalculations\
+    \ AS (\n    SELECT \n        s.Commodity,\n        s.SizeName,\n        s.Grade,\n\
+    \        s.ShortageEquivCtns,\n        p.pct_of_commodity,\n        CASE \n  \
+    \          WHEN p.pct_of_commodity > 0 \n            THEN CEILING((s.ShortageEquivCtns\
+    \ / p.pct_of_commodity) / 23.2)\n            ELSE NULL \n        END as BinsNeeded\n\
+    \    FROM WeeklyShortages s\n    LEFT JOIN PackoutPercentages p ON s.Commodity\
+    \ = p.Commodity \n                                   AND s.SizeName = p.SizeName\
+    \ \n                                   AND s.Grade = p.Grade\n)\nSELECT \n   \
+    \ Commodity,\n    COUNT(*) as ShortageItems,\n    SUM(CAST(ShortageEquivCtns as\
+    \ decimal(18,2))) as TotalShortageCartons,\n    SUM(CASE WHEN BinsNeeded IS NOT\
+    \ NULL THEN BinsNeeded ELSE 0 END) as TotalBinsNeeded,\n    COUNT(CASE WHEN BinsNeeded\
+    \ IS NULL THEN 1 END) as ItemsWithNoPackoutData\nFROM BinCalculations\nGROUP BY\
+    \ Commodity\nORDER BY TotalBinsNeeded DESC"
+  notes: 'Compares unfulfilled weekly orders vs current inventory by commodity/size/grade.
+    Uses 14-day average packout percentages to calculate how many bins need to be
+    picked to cover shortages. Formula: shortage_cartons / packout_percentage / 23.2_cartons_per_bin'
+  verified: false
+- timestamp: '2026-03-04T15:06:00.837862'
+  question: Weekly commodity shortage analysis with picking requirements using 14-day
+    packout averages, excluding juice grade
+  sql: "WITH WeeklyShortages AS (\n    SELECT \n        o.Commodity,\n        o.SizeName,\n\
+    \        o.Grade,\n        ISNULL(o.UnfulfilledEquivCtns, 0) - ISNULL(i.TotalEquivCtns,\
+    \ 0) as ShortageEquivCtns\n    FROM (\n        SELECT \n            Commodity,\n\
+    \            SizeName,\n            Grade,\n            SUM(equivqnt - (RESERVEQNT\
+    \ * EQUIVFACTOR)) as UnfulfilledEquivCtns\n        FROM dbo.VW_LPSALESORDERS\n\
+    \        WHERE SHIPDATETIME >= CAST(GETDATE() AS DATE)\n          AND SHIPDATETIME\
+    \ < DATEADD(day, 7, CAST(GETDATE() AS DATE))\n          AND ORDERQNT > RESERVEQNT\n\
+    \          AND ORDERQNT > 0\n          AND Commodity IS NOT NULL\n          AND\
+    \ Grade != 'JUICE'\n        GROUP BY Commodity, SizeName, Grade\n    ) o\n   \
+    \ LEFT JOIN (\n        SELECT \n            Commodity,\n            Size,\n  \
+    \          Grade,\n            SUM(equivctns) as TotalEquivCtns\n        FROM\
+    \ dbo.VW_BININVENTORY\n        WHERE AvailableQuantity > 0\n          AND Grade\
+    \ != 'JUICE'\n        GROUP BY Commodity, Size, Grade\n    ) i ON o.Commodity\
+    \ = i.Commodity AND o.SizeName = i.Size AND o.Grade = i.Grade\n    WHERE ISNULL(o.UnfulfilledEquivCtns,\
+    \ 0) > ISNULL(i.TotalEquivCtns, 0)\n),\nPackoutPercentages AS (\n    SELECT \n\
+    \        Commodity,\n        SizeName,\n        Grade,\n        pct_of_commodity\n\
+    \    FROM dbo.VW_14DAYAVGPACKOUT\n    WHERE pct_of_commodity > 0\n      AND Grade\
+    \ != 'JUICE'\n),\nBinCalculations AS (\n    SELECT \n        s.Commodity,\n  \
+    \      s.SizeName,\n        s.Grade,\n        s.ShortageEquivCtns,\n        p.pct_of_commodity,\n\
+    \        CASE \n            WHEN p.pct_of_commodity > 0 \n            THEN CEILING((s.ShortageEquivCtns\
+    \ / p.pct_of_commodity) / 23.2)\n            ELSE NULL \n        END as BinsNeeded\n\
+    \    FROM WeeklyShortages s\n    LEFT JOIN PackoutPercentages p ON s.Commodity\
+    \ = p.Commodity \n                                   AND s.SizeName = p.SizeName\
+    \ \n                                   AND s.Grade = p.Grade\n)\nSELECT \n   \
+    \ Commodity,\n    COUNT(*) as ShortageItems,\n    CAST(SUM(ShortageEquivCtns)\
+    \ as decimal(18,1)) as TotalShortageCartons,\n    SUM(CASE WHEN BinsNeeded IS\
+    \ NOT NULL THEN BinsNeeded ELSE 0 END) as TotalBinsNeeded,\n    COUNT(CASE WHEN\
+    \ BinsNeeded IS NULL THEN 1 END) as ItemsWithNoPackoutData\nFROM BinCalculations\n\
+    GROUP BY Commodity\nHAVING SUM(CASE WHEN BinsNeeded IS NOT NULL THEN BinsNeeded\
+    \ ELSE 0 END) > 0\n   OR COUNT(CASE WHEN BinsNeeded IS NULL THEN 1 END) > 0\n\
+    ORDER BY TotalBinsNeeded DESC"
+  notes: Compares unfulfilled orders for the next 7 days against current inventory,
+    calculates shortage in cartons, then uses 14-day average packout percentages to
+    determine bins needed to pick. Excludes juice grade. Items without packout data
+    show 0 bins needed but are counted separately.
+  verified: false
+- timestamp: '2026-03-04T15:20:59.996585'
+  question: How many lemons are shipping today
+  sql: "SELECT \n    SUM(ORDERQNT) as TotalUnits,\n    SUM(equivqnt) as TotalStdCartons,\n\
+    \    COUNT(*) as NumberOfOrderLines,\n    COUNT(DISTINCT CustomerName) as UniqueCustomers\n\
+    FROM dbo.VW_LPSALESORDERS\nWHERE Commodity = 'LEMON'\n  AND CAST(SHIPDATETIME\
+    \ as DATE) = CAST(GETDATE() as DATE)\n  AND ORDERQNT > 0"
+  notes: Use SHIPDATETIME for shipping date filter and equivqnt for standardized volume.
+    Filter ORDERQNT > 0 to exclude canceled/zero lines.
+  verified: false
+- timestamp: '2026-03-04T15:23:28.874501'
+  question: Break down lemon orders shipping today by customer
+  sql: "SELECT \n    s.Customer,\n    COUNT(DISTINCT s.SONO) as Total_Orders,\n  \
+    \  SUM(s.LineQnt) as Total_Units,\n    SUM(s.FinalEquivQty) as Total_Carton_Equiv,\n\
+    \    SUM(s.SALEAMT) as Total_Sales_Amount\nFROM dbo.VW_E_SHIPMENTS s\nJOIN dbo.VW_PRODUCTS\
+    \ p ON s.ProductProductIdx = p.ProductIdx\nWHERE p.Commodity = 'LEMON'\n    AND\
+    \ CAST(s.SHIPDATETIME AS DATE) = CAST(GETDATE() AS DATE)\nGROUP BY s.Customer\n\
+    ORDER BY Total_Sales_Amount DESC"
+  notes: Join VW_E_SHIPMENTS to VW_PRODUCTS on ProductProductIdx to get commodity
+    info. Use CAST to compare dates. Group by customer to get breakdown.
+  verified: false
+- timestamp: '2026-03-04T16:00:55.990266'
+  question: How many cartons of lemons are scheduled to ship today from sales orders
+  sql: "SELECT \n    COUNT(*) as Total_Order_Lines,\n    SUM(ORDERQNT) as Total_Units_Ordered,\n\
+    \    SUM(equivqnt) as Total_Carton_Equivalent,\n    SUM(SALEAMT) as Total_Sales_Amount,\n\
+    \    COUNT(DISTINCT CustomerName) as Number_of_Customers\nFROM dbo.VW_LPSALESORDERS\n\
+    WHERE Commodity = 'LEMON'\n    AND CAST(SHIPDATETIME AS DATE) = CAST(GETDATE()\
+    \ AS DATE)"
+  notes: Use VW_LPSALESORDERS for scheduled shipments, equivqnt for carton equivalent
+    volume. SHIPDATETIME is the scheduled ship date.
+  verified: false
+- timestamp: '2026-03-04T16:01:45.354090'
+  question: Average FOB price by size for navels over the last month
+  sql: "SELECT \n    SizeName,\n    COUNT(*) as Order_Lines,\n    SUM(equivqnt) as\
+    \ Total_Volume_Cartons,\n    AVG(FOBPrice) as Average_FOB_Price,\n    SUM(FOBPrice\
+    \ * equivqnt) / NULLIF(SUM(equivqnt), 0) as Volume_Weighted_Avg_FOB,\n    MIN(FOBPrice)\
+    \ as Min_FOB_Price,\n    MAX(FOBPrice) as Max_FOB_Price\nFROM dbo.VW_LPSALESORDERS\n\
+    WHERE Commodity = 'NAVEL'\n    AND SHIPDATETIME >= DATEADD(day, -30, GETDATE())\n\
+    \    AND FOBPrice > 0\n    AND equivqnt > 0\nGROUP BY SizeName\nORDER BY SizeName"
+  notes: Filter on FOBPrice > 0 and equivqnt > 0 to exclude zero-value transactions.
+    Use volume-weighted average for more accurate pricing since different order sizes
+    affect the market.
+  verified: false
+- timestamp: '2026-03-04T16:03:02.255991'
+  question: FOB per equivalent carton by size for navels last month
+  sql: "SELECT \n    SizeName,\n    COUNT(*) as Order_Lines,\n    SUM(equivqnt) as\
+    \ Total_Volume_Cartons,\n    SUM(FOBPrice * equivqnt) / NULLIF(SUM(equivqnt),\
+    \ 0) as FOB_Per_Equivalent_Carton,\n    AVG(EQUIVFACTOR) as Avg_Equiv_Factor\n\
+    FROM dbo.VW_LPSALESORDERS\nWHERE Commodity = 'NAVEL'\n    AND SHIPDATETIME >=\
+    \ DATEADD(day, -30, GETDATE())\n    AND FOBPrice > 0\n    AND equivqnt > 0\nGROUP\
+    \ BY SizeName\nORDER BY SizeName"
+  notes: Volume-weighted average using SUM(FOBPrice * equivqnt) / SUM(equivqnt) gives
+    FOB per equivalent carton, normalizing different pack styles.
+  verified: true
+- timestamp: '2026-03-04T16:32:10.471063'
+  question: How many bins of specific size/grade navels on hand
+  sql: "SELECT \n    SUM(AvailableQuantity) as TotalBins,\n    SUM(equivctns) as TotalCartonEquiv,\n\
+    \    COUNT(*) as BinRecords\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity\
+    \ > 0\n  AND Commodity = 'NAVEL'\n  AND Size = '088'\n  AND Grade = 'FANCY'"
+  notes: Standard inventory query pattern. Remember to pad size to 3 digits and use
+    exact grade match. equivctns is pre-calculated carton equivalent.
+  verified: true
+- timestamp: '2026-03-04T16:49:50.441129'
+  question: Film bag production plan for specific ship date
+  sql: "SELECT \n    Commodity,\n    Style,\n    SizeName,\n    Grade,\n    SUM(ORDERQNT)\
+    \ as TotalUnits,\n    SUM(equivqnt) as TotalCartonEquiv,\n    COUNT(DISTINCT CustomerName)\
+    \ as NumCustomers,\n    STRING_AGG(CustomerName, ', ') as Customers\nFROM dbo.VW_LPSALESORDERS\n\
+    WHERE Style LIKE '%FB%'\n  AND CAST(SHIPDATETIME AS DATE) = '2026-03-05'\n  AND\
+    \ SOStatus IN ('Order', 'Open')\n  AND ORDERQNT > 0\nGROUP BY Commodity, Style,\
+    \ SizeName, Grade\nORDER BY Commodity, TotalUnits DESC"
+  notes: Use '%FB%' to filter film bag styles. Filter by SOStatus 'Order' or 'Open'
+    for unshipped orders. Group by commodity, style, size, grade for production planning.
+  verified: true

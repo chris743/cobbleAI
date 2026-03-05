@@ -1,0 +1,43 @@
+domain: sales
+description: |
+  Sales order data from both Cobblestone and LP systems.
+  Tracks customer orders, quantities, pricing, and order status.
+
+  Two views provide sales data from different system perspectives:
+  - VW_COBBLESTONESALESORDERS: Cobblestone system sales (includes juice/bulk sales)
+  - VW_LPSALESORDERS: LP system sales (finished goods - cartons, bags, etc.)
+
+  Both views share the same column structure but come from different source systems
+  and cover different product types.
+
+views:
+- name: dbo.VW_COBBLESTONESALESORDERS
+  system: Cobblestone
+  description: "Sales orders from Cobblestone system. Includes juice bin sales and bulk transactions."
+  use_for:
+    - Juice/bulk bin sales
+    - Cobblestone-originated sales orders
+
+- name: dbo.VW_LPSALESORDERS
+  system: LP
+  description: "Sales orders from LP system. Finished goods sales (cartons, bags, etc.)."
+  use_for:
+    - Finished goods sales analysis
+    - Customer order tracking
+    - Revenue and pricing analysis
+    - Sales by commodity/size/grade
+
+key_concepts:
+  - name: Standard Carton Equivalents in Sales
+    description: |
+      EQUIVFACTOR converts order units to standard cartons.
+      equivqnt = ORDERQNT * EQUIVFACTOR.
+      Examples: CTN = 1.0 equiv, JUICE BIN = 23.25 equiv, 10# CARTON = 0.25 equiv.
+      Use equivqnt for volume comparisons across different pack styles.
+
+common_joins:
+  - description: "Sales with product details"
+    sql: |
+      SELECT s.*, p.ProductDescr
+      FROM dbo.VW_LPSALESORDERS s
+      JOIN dbo.VW_PRODUCTS p ON s.PRODUCTIDX = p.ProductIdx

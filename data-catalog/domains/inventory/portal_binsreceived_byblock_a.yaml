@@ -1,0 +1,269 @@
+# Schema documentation for dbo.vw_Portal_BinsReceived_ByBlock_A
+# Extended block receiving summary with BlockStatus - Cobblestone system (grower portal)
+
+name: dbo.vw_Portal_BinsReceived_ByBlock_A
+short_name: vw_Portal_BinsReceived_ByBlock_A
+schema: dbo
+domain: inventory
+system: Cobblestone
+
+description: |
+  Extended version of vw_Portal_BinsReceived_ByBlock with two additional columns:
+  - EstimatedBinsRemainingA_FY: Alternate remaining estimate calculation
+  - BlockStatus: Derived harvest status label (e.g., 'Fully Picked', 'No Estimate')
+
+  Same grain as ByBlock (one row per block), same fiscal year (Oct 1 - Sep 30).
+  Use this view when you need BlockStatus classification. Otherwise, ByBlock is sufficient.
+
+business_purpose: |
+  - Grower portal display with harvest status indicators
+  - Classify blocks by picking progress (Fully Picked, No Estimate, etc.)
+  - Alternate remaining estimate for planning scenarios
+  - All purposes of vw_Portal_BinsReceived_ByBlock plus status tracking
+
+row_count_approx: 1117
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: source_database
+  type: nvarchar(20)
+  nullable: false
+  description: "Always 'COBBLESTONE' for this view."
+
+- name: GrowerID
+  type: nvarchar(6)
+  nullable: false
+  description: "Grower ID code (e.g., '2001')."
+
+- name: GrowerName
+  type: nvarchar(40)
+  nullable: false
+  description: "Grower name (e.g., 'ARLIS VALENTINE')."
+
+- name: GABLOCKIDX
+  type: int
+  nullable: false
+  description: "Grower Accounting block index. Join to VW_BLOCKS on GABLOCKIDX."
+
+- name: BlockID
+  type: nvarchar(12)
+  nullable: false
+  description: "Block ID string (e.g., '2001102')."
+
+- name: BlockName
+  type: nvarchar(40)
+  nullable: false
+  description: "Block name (e.g., 'ARLIS VALENTINE - FUK')."
+
+- name: CMTYIDX
+  type: int
+  nullable: false
+  description: "Cobblestone commodity index. Join to VW_CF_COMMODITIES on commodityidx."
+
+- name: CommodityName
+  type: varchar(100)
+  nullable: false
+  description: "Commodity name (e.g., 'NAVEL', 'MANDARIN')."
+
+- name: VARIETYIDX
+  type: int
+  nullable: false
+  description: "Variety index."
+
+- name: VarietyName
+  type: varchar(100)
+  nullable: false
+  description: "Variety name (e.g., 'FUKUMOTO', 'TANGO'). May be empty."
+
+- name: EstimatedBins
+  type: decimal(18,4)
+  nullable: true
+  description: "Estimated total bins for this block for the current fiscal year (Oct 1 - Sep 30)."
+
+- name: LastReceivedDate
+  type: date
+  nullable: true
+  description: "Date of the most recent receiving ticket for this block."
+
+- name: LastReceivedQty
+  type: decimal(38,4)
+  nullable: true
+  description: "Quantity (bins) from the most recent receiving ticket."
+
+- name: Bins_Last30
+  type: decimal(38,4)
+  nullable: true
+  description: "Total bins received from this block in the last 30 days."
+
+- name: Bins_FYTD
+  type: decimal(38,4)
+  nullable: true
+  description: "Bins received fiscal-year-to-date (Oct 1 through today)."
+
+- name: Bins_PriorFYTD
+  type: decimal(38,4)
+  nullable: true
+  description: "Bins received in the prior fiscal year to the same relative date."
+
+- name: EstimatedBinsRemaining_FY
+  type: decimal(38,4)
+  nullable: true
+  description: "Estimated bins remaining = EstimatedBins - Bins_FYTD. Can be negative."
+
+- name: EstimatedBinsRemaining_FY_Clamped
+  type: decimal(38,4)
+  nullable: true
+  description: "Estimated bins remaining clamped to zero minimum (negative values become 0)."
+
+- name: EstimatedBinsRemainingA_FY
+  type: decimal(38,4)
+  nullable: true
+  description: |
+    Estimated bins remaining in the field (not yet picked).
+    Formula: EstimatedBins - Bins_FYTD (initial estimate minus what's been received).
+    0 = field has been fully picked.
+
+- name: BlockStatus
+  type: varchar(16)
+  nullable: false
+  description: |
+    Derived harvest status label for the block.
+    Possible values:
+    - 'Exceeds Estimate': Actual receiving has exceeded the estimated bins
+    - 'Fully Picked': Block has been completely harvested (FYTD = Estimated)
+    - 'No Estimate': Block has no estimated bins set
+    - 'Not Picked': Block has an estimate but no bins received yet
+    - 'Partially Picked': Block has some receiving but estimate not yet reached
+
+relationships:
+  - target: dbo.VW_BLOCKS
+    join_column: GABLOCKIDX
+    target_column: GABLOCKIDX
+    cardinality: one-to-one
+    note: "Full block master data"
+
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CMTYIDX
+    target_column: commodityidx
+    cardinality: many-to-one
+    note: "CF commodity details"
+
+common_filters:
+  - column: BlockStatus
+    operation: "= 'Fully Picked'"
+    description: "Only blocks that have been fully harvested"
+
+  - column: BlockStatus
+    operation: "<> 'Fully Picked'"
+    description: "Blocks still in progress or not started"
+
+  - column: GrowerID
+    operation: "= '2001'"
+    description: "Filter to specific grower"
+
+sample_queries:
+  - description: "Block status summary by grower"
+    sql: |
+      SELECT
+        GrowerName,
+        BlockStatus,
+        COUNT(*) as BlockCount,
+        SUM(EstimatedBins) as TotalEstimated,
+        SUM(Bins_FYTD) as TotalReceived
+      FROM dbo.vw_Portal_BinsReceived_ByBlock_A
+      GROUP BY GrowerName, BlockStatus
+      ORDER BY GrowerName, BlockStatus
+
+  - description: "All blocks not yet fully picked"
+    sql: |
+      SELECT
+        GrowerName,
+        BlockName,
+        CommodityName,
+        VarietyName,
+        EstimatedBins,
+        Bins_FYTD,
+        EstimatedBinsRemaining_FY_Clamped as RemainingEst,
+        BlockStatus
+      FROM dbo.vw_Portal_BinsReceived_ByBlock_A
+      WHERE BlockStatus <> 'Fully Picked'
+        AND BlockStatus <> 'No Estimate'
+      ORDER BY EstimatedBinsRemaining_FY_Clamped DESC
+
+  - description: "Harvest progress by commodity"
+    sql: |
+      SELECT
+        CommodityName,
+        COUNT(*) as TotalBlocks,
+        SUM(CASE WHEN BlockStatus = 'Fully Picked' THEN 1 ELSE 0 END) as FullyPicked,
+        SUM(EstimatedBins) as TotalEstimated,
+        SUM(Bins_FYTD) as TotalReceived,
+        SUM(EstimatedBinsRemaining_FY_Clamped) as TotalRemaining
+      FROM dbo.vw_Portal_BinsReceived_ByBlock_A
+      GROUP BY CommodityName
+      ORDER BY CommodityName
+
+notes: |
+  - This is the extended version of vw_Portal_BinsReceived_ByBlock (adds EstimatedBinsRemainingA_FY and BlockStatus)
+  - Same row count and grain as ByBlock (one row per block)
+  - Fiscal year = Oct 1 - Sep 30 (citrus season)
+  - All data is Cobblestone system
+  - BlockStatus values: Exceeds Estimate, Fully Picked, No Estimate, Not Picked, Partially Picked
+  - EstimatedBinsRemainingA_FY = bins still in the field (initial estimate minus receivings)
+
+_sample_data:
+- source_database: COBBLESTONE
+  GrowerID: '001'
+  GrowerName: COBBLESTONE FRUIT
+  GABLOCKIDX: '705'
+  BlockID: 001008
+  BlockName: CF - MANDARINS - DUMMY INVENTORY
+  CMTYIDX: '5'
+  CommodityName: MANDARIN
+  VARIETYIDX: '0'
+  VarietyName: ''
+  LastReceivedQty: '0.0000'
+  Bins_Last30: '0.0000'
+  Bins_FYTD: '0.0000'
+  Bins_PriorFYTD: '0.0000'
+  BlockStatus: No Estimate
+- source_database: COBBLESTONE
+  GrowerID: '2001'
+  GrowerName: ARLIS VALENTINE
+  GABLOCKIDX: '108'
+  BlockID: '2001102'
+  BlockName: ARLIS VALENTINE - FUK
+  CMTYIDX: '1'
+  CommodityName: NAVEL
+  VARIETYIDX: '7'
+  VarietyName: FUKUMOTO
+  EstimatedBins: '217.0000'
+  LastReceivedDate: '2025-10-28'
+  LastReceivedQty: '217.0000'
+  Bins_Last30: '0.0000'
+  Bins_FYTD: '217.0000'
+  Bins_PriorFYTD: '0.0000'
+  EstimatedBinsRemaining_FY: '0.0000'
+  EstimatedBinsRemaining_FY_Clamped: '0.0000'
+  EstimatedBinsRemainingA_FY: '0.0000'
+  BlockStatus: Fully Picked
+- source_database: COBBLESTONE
+  GrowerID: '2001'
+  GrowerName: ARLIS VALENTINE
+  GABLOCKIDX: '109'
+  BlockID: '2001103'
+  BlockName: ARLIS VALENTINE - TANGO
+  CMTYIDX: '5'
+  CommodityName: MANDARIN
+  VARIETYIDX: '31'
+  VarietyName: TANGO
+  EstimatedBins: '422.0000'
+  LastReceivedDate: '2026-01-20'
+  LastReceivedQty: '18.0000'
+  Bins_Last30: '0.0000'
+  Bins_FYTD: '422.0000'
+  Bins_PriorFYTD: '0.0000'
+  EstimatedBinsRemaining_FY: '0.0000'
+  EstimatedBinsRemaining_FY_Clamped: '0.0000'
+  EstimatedBinsRemainingA_FY: '0.0000'
+  BlockStatus: Fully Picked

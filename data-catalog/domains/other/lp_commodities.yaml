@@ -1,0 +1,78 @@
+# Schema documentation for dbo.VW_LP_COMMODITIES
+# LP commodity reference table
+
+name: dbo.VW_LP_COMMODITIES
+short_name: VW_LP_COMMODITIES
+schema: dbo
+domain: other
+system: LP
+
+description: |
+  LP commodity reference/lookup table (~44 rows).
+  Use this to resolve commodity names for LP system data
+  (VW_BININVENTORY, VW_LPSALESORDERS, VW_E_SHIPMENTS, repack views, etc.).
+
+  LP has more granular commodity definitions than Cobblestone (~44 vs ~11).
+  CRITICAL: Do NOT join this to Cobblestone tables. Use VW_CF_COMMODITIES for CF data.
+
+business_purpose: |
+  - Commodity name lookup for all LP system data
+  - Maps CommodityIDx to display names for inventory and sales reports
+  - Provides both short commodity name and invoice-formatted name
+
+row_count_approx: 44
+refresh_frequency: "Real-time sync from LP system"
+
+columns:
+- name: source_database
+  type: nvarchar(20)
+  nullable: false
+  description: "Always 'LP' for this table."
+
+- name: CommodityIDx
+  type: int
+  nullable: true
+  description: |
+    Primary key. LP commodity index.
+    Join target for CommodityIDX/CmtyIdx columns in LP tables.
+    NOT compatible with Cobblestone CommodityIDx values.
+
+- name: InvoiceCommodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Invoice/formal commodity name (e.g., 'NAVEL ORANGE', 'LEMON'). Used on customer invoices."
+
+- name: Commodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Short commodity name (e.g., 'NAVEL', 'VALENCIA', 'LEMON'). Used in most operational displays."
+
+relationships: []
+
+common_filters: []
+
+sample_queries:
+  - description: "List all LP commodities"
+    sql: |
+      SELECT CommodityIDx, Commodity, InvoiceCommodity
+      FROM dbo.VW_LP_COMMODITIES
+      ORDER BY CommodityIDx
+
+notes: |
+  - ~44 rows - more granular than CF (~11 commodities)
+  - CommodityIDx values are NOT the same as CF CommodityIDx values
+  - LP CommodityIDx 1 = NAVEL, but CF CommodityIDx 1 also = NAVEL - coincidence, not equivalence
+
+_sample_data:
+- source_database: LP
+  CommodityIDx: '1'
+  InvoiceCommodity: NAVEL ORANGE
+  Commodity: NAVEL
+- source_database: LP
+  CommodityIDx: '2'
+  InvoiceCommodity: VALENCIA ORANGE
+  Commodity: VALENCIA
+- source_database: LP
+  CommodityIDx: '3'
+  InvoiceCommodity: LEMON
+  Commodity: LEMON

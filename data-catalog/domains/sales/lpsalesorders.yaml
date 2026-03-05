@@ -1,0 +1,249 @@
+# Schema documentation for dbo.VW_LPSALESORDERS
+# LP system sales orders (finished goods)
+
+name: dbo.VW_LPSALESORDERS
+short_name: VW_LPSALESORDERS
+schema: dbo
+domain: sales
+system: LP
+
+description: |
+  Sales orders from the LP system. Covers finished goods sales - cartons, bags,
+  and other packed product. Each row = one order line.
+
+  This is the primary sales order view for finished goods analysis.
+  For juice/bulk sales, see VW_COBBLESTONESALESORDERS.
+
+business_purpose: |
+  - Track finished goods sales by customer, commodity, size, grade
+  - Revenue and pricing analysis
+  - Monitor order status and fulfillment
+  - Calculate sales volumes in standard carton equivalents
+  - Support pool/lot settlement through equivqnt calculations
+
+row_count_approx: 87216
+refresh_frequency: "Real-time sync from LP system"
+
+columns:
+- name: SOStatus
+  type: nvarchar(100)
+  nullable: true
+  description: "Sales order status (e.g., 'Paid In Full', 'Open', 'Shipped')."
+
+- name: SODATETIME
+  type: datetime2
+  nullable: true
+  description: "Sales order date. When the order was created."
+
+- name: SHIPDATETIME
+  type: datetime2
+  nullable: true
+  description: "Ship date. When the order was/will be shipped."
+
+- name: INVOICEDATE
+  type: datetime2
+  nullable: true
+  description: "Invoice date. When the customer was invoiced."
+
+- name: WAREHOUSEIDX
+  type: int
+  nullable: true
+  description: "Warehouse index."
+
+- name: Warehouse
+  type: nvarchar(40)
+  nullable: true
+  description: "Warehouse name (e.g., 'COBBLESTONE SANGER')."
+
+- name: Storage
+  type: nvarchar(50)
+  nullable: true
+  description: "Storage location (e.g., 'COBBLE SANGER')."
+
+- name: PRODUCTIDX
+  type: int
+  nullable: true
+  description: "Product index. Join to VW_PRODUCTS for full product details."
+
+- name: UNITSPERPALLET
+  type: int
+  nullable: true
+  description: "Units per pallet for this product."
+
+- name: LINETYPE
+  type: nvarchar(10)
+  nullable: true
+  description: "Order line type. '1' = standard product line."
+
+- name: EQUIVFACTOR
+  type: float
+  nullable: true
+  description: |
+    Standard carton equivalent factor.
+    1.0 = standard carton, 0.25 = 10# carton (4 per std ctn).
+    Converts ORDERQNT to standardized volume for comparison.
+
+- name: ORDERQNT
+  type: numeric(24,8)
+  nullable: true
+  description: "Ordered quantity in product units (cartons, bags, etc.)."
+
+- name: equivqnt
+  type: float
+  nullable: true
+  description: "Standard carton equivalent quantity. ORDERQNT * EQUIVFACTOR."
+
+- name: RESERVEQNT
+  type: float
+  nullable: true
+  description: "Reserved quantity. Inventory allocated but not yet shipped."
+
+- name: FOBPrice
+  type: numeric(24,8)
+  nullable: true
+  description: "FOB price per unit. Price at shipping point before freight."
+
+- name: Price
+  type: numeric(24,8)
+  nullable: true
+  description: "Delivered price per unit."
+
+- name: SALEAMT
+  type: numeric(24,8)
+  nullable: true
+  description: "Total sale amount for this line. ORDERQNT * Price."
+
+- name: CustomerName
+  type: nvarchar(40)
+  nullable: true
+  description: "Customer name (e.g., 'KINGS RIVER PACKING, LP')."
+
+- name: Commodity
+  type: nvarchar(50)
+  nullable: true
+  description: "Commodity name (e.g., 'NAVEL', 'MANDARIN')."
+
+- name: Style
+  type: nvarchar(50)
+  nullable: true
+  description: |
+    Pack style - defines packaging format. Style codes contain a suffix indicating
+    bag type: FB = Film Bags, CB = Combo Bags, NB = Net Bags, WM = Wicketed Mesh Bags,
+    HD = Header Bags. All other styles (CTN, 10# CARTON, etc.) are Bulk.
+    These run on different equipment so the distinction matters for operations.
+
+- name: SizeName
+  type: nvarchar(50)
+  nullable: true
+  description: "Size code (e.g., '113', '072'). Count per standard carton. Always zero-padded to 3 digits (e.g., '088' not '88')."
+
+- name: Grade
+  type: nvarchar(50)
+  nullable: true
+  description: "Quality grade (e.g., 'FANCY', 'CHOICE')."
+
+- name: Region
+  type: nvarchar(50)
+  nullable: true
+  description: "Origin region (e.g., 'USA - CA')."
+
+- name: Method
+  type: nvarchar(50)
+  nullable: true
+  description: "Packing method code (e.g., 'CPK F CT MFC', 'CPK C CT ESS')."
+
+relationships:
+  - target: dbo.VW_PRODUCTS
+    join_column: PRODUCTIDX
+    target_column: ProductIdx
+    cardinality: many-to-one
+    note: "Product details (LP products)"
+
+common_filters:
+  - column: SHIPDATETIME
+    operation: ">= DATEADD(day, -30, GETDATE())"
+    description: "Last 30 days shipped"
+
+  - column: SOStatus
+    operation: "= 'Paid In Full'"
+    description: "Completed/paid orders"
+
+  - column: Commodity
+    operation: "= 'NAVEL'"
+    description: "Filter to specific commodity"
+
+  - column: equivqnt
+    operation: "> 0"
+    description: "Lines with actual volume"
+
+sample_queries:
+  - description: "Sales by customer last 30 days"
+    sql: |
+      SELECT CustomerName,
+        SUM(equivqnt) as TotalStdCartons,
+        SUM(SALEAMT) as TotalRevenue,
+        SUM(SALEAMT) / NULLIF(SUM(equivqnt), 0) as AvgPricePerStdCtn
+      FROM dbo.VW_LPSALESORDERS
+      WHERE SHIPDATETIME >= DATEADD(day, -30, GETDATE())
+        AND SALEAMT > 0
+      GROUP BY CustomerName
+      ORDER BY TotalRevenue DESC
+
+  - description: "Sales by commodity, size, grade"
+    sql: |
+      SELECT Commodity, SizeName, Grade, Style,
+        SUM(ORDERQNT) as Units,
+        SUM(equivqnt) as StdCartons,
+        SUM(SALEAMT) as Revenue,
+        SUM(SALEAMT) / NULLIF(SUM(equivqnt), 0) as PricePerStdCtn
+      FROM dbo.VW_LPSALESORDERS
+      WHERE SHIPDATETIME >= DATEADD(day, -30, GETDATE())
+      GROUP BY Commodity, SizeName, Grade, Style
+      ORDER BY Revenue DESC
+
+  - description: "Average price by size for a commodity"
+    sql: |
+      SELECT SizeName, Grade,
+        SUM(equivqnt) as Volume,
+        SUM(SALEAMT) / NULLIF(SUM(equivqnt), 0) as AvgPrice
+      FROM dbo.VW_LPSALESORDERS
+      WHERE Commodity = 'NAVEL'
+        AND SHIPDATETIME >= DATEADD(day, -30, GETDATE())
+        AND SALEAMT > 0
+      GROUP BY SizeName, Grade
+      ORDER BY SizeName, Grade
+
+notes: |
+  - This is LP system data - PRODUCTIDX references LP products
+  - equivqnt normalizes different pack styles to standard cartons for volume comparison
+  - EQUIVFACTOR examples: CTN = 1.0, 10# CARTON = 0.25, JUICE BIN = 23.25
+  - No lot/pool column in this view - for pool-level sales, use VW_E_SHIPMENTS (has GALOTIDX)
+  - Method column encodes packing specifications (coating, carton type, etc.)
+  - Some SALEAMT = 0 records may be samples, internal transfers, or consignment
+  - Food bank customers (CustomerName contains 'FOOD BANK') order in lbs, not cartons. Divide ORDERQNT by 40 to convert to carton equivalents for these orders.
+
+_sample_data:
+- SOStatus: Paid In Full
+  SODATETIME: '2025-12-16 00:00:00'
+  SHIPDATETIME: '2025-12-16 00:00:00'
+  INVOICEDATE: '2025-12-16 00:00:00'
+  WAREHOUSEIDX: '12'
+  Warehouse: COBBLESTONE SANGER
+  Storage: COBBLE SANGER
+  PRODUCTIDX: '513769'
+  UNITSPERPALLET: '170'
+  LINETYPE: '1'
+  EQUIVFACTOR: '0.25'
+  ORDERQNT: '1.00000000'
+  equivqnt: '0.25'
+  RESERVEQNT: '0.0'
+  FOBPrice: '18.75000000'
+  Price: '20.00000000'
+  SALEAMT: '20.00000000'
+  CustomerName: KINGS RIVER PACKING, LP
+  Commodity: NAVEL
+  Style: 10# CARTON
+  SizeName: '113'
+  Grade: CHOICE
+  Region: USA - CA
+  Method: CPK C CT ESS

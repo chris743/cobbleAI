@@ -1,0 +1,146 @@
+# Schema documentation for dbo.VW_CF_POOLS
+# Cobblestone pool definitions for grower settlement
+
+name: dbo.VW_CF_POOLS
+short_name: VW_CF_POOLS
+schema: dbo
+domain: products
+system: Cobblestone
+
+description: |
+  Cobblestone pool definitions. Each pool is a logical grouping of fruit
+  used to average sales returns and distribute payments to growers.
+
+  Pool code format: C[YY][Commodity][Maturity][Sequence]
+  Example: C26NG01 = Crop year 2026, Navels, General maturity, pool 01.
+
+  Import pools use format like '99-85' for imported fruit.
+
+business_purpose: |
+  - Define pools for grower settlement accounting
+  - Group fruit from multiple growers for averaging returns
+  - Track pool open/close status and date ranges
+  - Link receiving data to settlement pools
+
+row_count_approx: 103
+refresh_frequency: "Real-time sync from Cobblestone system"
+
+columns:
+- name: POOLIDX
+  type: int
+  nullable: false
+  description: "Primary key. Numeric pool index. Used as join target from CF receiving data (poolidx)."
+
+- name: ID
+  type: nvarchar(12)
+  nullable: true
+  description: |
+    Pool ID code string (e.g., 'C26NG01', '99-85').
+    This is the human-readable pool code.
+    Domestic format: C[YY][Commodity Code][Maturity][Sequence].
+    Import format: varies (e.g., '99-85').
+    VW_BINSRECEIVED.poolID joins to this column.
+
+- name: DESCR
+  type: nvarchar(40)
+  nullable: true
+  description: "Pool description (e.g., 'GRAPEFRUIT IMPORT', 'GOLD NUGGET IMPORT'). Human-readable label."
+
+- name: ICCLOSEDFLAG
+  type: char(1)
+  nullable: true
+  description: "Inventory control closed flag. 'N' = open/active pool, 'Y' = closed (settlement complete)."
+
+- name: POOLTYPE
+  type: char(1)
+  nullable: true
+  description: "Ignore."
+
+- name: CMTYIDX
+  type: int
+  nullable: true
+  description: "Cobblestone commodity index. Join to VW_CF_COMMODITIES on commodityidx."
+
+- name: VARIETYIDX
+  type: int
+  nullable: true
+  description: "Variety index. 0 = all varieties (pool not variety-specific)."
+
+- name: ICDATEFROM
+  type: datetime2
+  nullable: true
+  description: "Pool start date. Beginning of the period this pool covers."
+
+- name: ICDATETHRU
+  type: datetime2
+  nullable: true
+  description: "Pool end date. End of the period this pool covers."
+
+- name: GARUNIDX
+  type: int
+  nullable: true
+  description: "Grower Accounting run index. A run is the logical separator for sizer report entries - e.g., running 50 bins, stopping, then running another 50 = 2 runs. Used to group sizer entries that may be combined into a single packout report."
+
+relationships:
+  - target: dbo.VW_CF_COMMODITIES
+    join_column: CMTYIDX
+    target_column: CommodityIDx
+    cardinality: many-to-one
+    note: "CF commodity for this pool"
+
+common_filters:
+  - column: ICCLOSEDFLAG
+    operation: "= 'N'"
+    description: "Open/active pools only"
+
+  - column: ID
+    operation: "LIKE 'C26%'"
+    description: "Current season (2026) pools"
+
+sample_queries:
+  - description: "All open pools for current season"
+    sql: |
+      SELECT p.ID, p.DESCR, c.Commodity, p.ICDATEFROM, p.ICDATETHRU
+      FROM dbo.VW_CF_POOLS p
+      JOIN dbo.VW_CF_COMMODITIES c ON p.CMTYIDX = c.CommodityIDx
+      WHERE p.ICCLOSEDFLAG = 'N'
+        AND p.ID LIKE 'C26%'
+      ORDER BY p.ID
+
+  - description: "Pool lookup by ID"
+    sql: |
+      SELECT * FROM dbo.VW_CF_POOLS WHERE ID = 'C26NG01'
+
+notes: |
+  - Pool ID code: C[YY][Commodity][Maturity][Sequence] for domestic fruit
+  - POOLIDX is the numeric FK used in CF tables; ID is the human-readable code
+  - VW_BINSRECEIVED.poolID joins to VW_CF_POOLS.ID (string join)
+  - VARIETYIDX = 0 means the pool covers all varieties of that commodity
+  - POOLTYPE: ignore
+  - GARUNIDX: logical run separator for sizer entries (0 = no specific run)
+
+_sample_data:
+- POOLIDX: '1'
+  ID: 99-85
+  DESCR: GRAPEFRUIT IMPORT
+  ICCLOSEDFLAG: N
+  POOLTYPE: '2'
+  CMTYIDX: '9'
+  VARIETYIDX: '0'
+  GARUNIDX: '0'
+- POOLIDX: '2'
+  ID: 99-92
+  DESCR: GOLD NUGGET IMPORT
+  ICCLOSEDFLAG: N
+  POOLTYPE: '2'
+  CMTYIDX: '6'
+  VARIETYIDX: '0'
+  GARUNIDX: '0'
+- POOLIDX: '3'
+  ID: 99-93
+  DESCR: MINNEOLA IMPORT
+  ICCLOSEDFLAG: N
+  POOLTYPE: '2'
+  CMTYIDX: '7'
+  VARIETYIDX: '0'
+  GARUNIDX: '0'
