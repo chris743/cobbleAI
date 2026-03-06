@@ -99,6 +99,57 @@ def run_agent_turn(messages: list, max_turns: int = None, log_fn=None) -> str:
     return "\n".join(accumulated_text) if accumulated_text else "Max turns reached without final response."
 
 
+def run_agent_turn_streaming(messages: list, max_turns: int = None, log_fn=None):
+    """
+    Generator version of run_agent_turn that yields SSE events.
+    Yields text tokens as they arrive, tool status events, and a final done event.
+    Messages list is mutated in place.
+    """
+    if log_fn is None:
+        log_fn = print
+    max_turns = max_turns or MAX_TURNS
+    tools = get_tools()
+
+    for turn in range(max_turns):
+        # Stream from Claude, yielding text tokens in real-time
+        with client.messages.stream(
+            model=MODEL,
+            max_tokens=30000,
+            system=SYSTEM_PROMPT,
+            tools=tools,
+            messages=messages
+        ) as stream:
+            # Yield text deltas as they arrive
+            for event in stream:
+                if hasattr(event, 'type'):
+                    if event.type == 'content_block_delta' and hasattr(event.delta, 'text'):
+                        yield ("token", event.delta.text)
+
+            response = stream.get_final_message()
+
+        # Add assistant response to conversation history
+        messages.append({"role": "assistant", "content": response.content})
+
+        # Done — no more tool calls
+        if response.stop_reason == "end_turn":
+            return
+
+        # Process tool calls
+        tool_results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                log_fn(f"  [Tool Call] {block.name}: {json.dumps(block.input)[:100]}...")
+                yield ("tool", block.name)
+                result = toolkit.handle_tool_call(block.name, block.input)
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": json.dumps(result, default=str)
+                })
+
+        messages.append({"role": "user", "content": tool_results})
+
+
 def run_agent(user_question: str, max_turns: int = None) -> str:
     """Run a single standalone question (no conversation history)."""
     messages = [{"role": "user", "content": user_question}]

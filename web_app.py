@@ -18,9 +18,9 @@ from dotenv import load_dotenv
 # Load .env before importing agent (which initializes the Anthropic client at import time)
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-from flask import Flask, render_template, request, jsonify, send_from_directory, abort
+from flask import Flask, render_template, request, jsonify, send_from_directory, abort, Response
 from flask_cors import CORS
-from agent_claude import run_agent_turn
+from agent_claude import run_agent_turn, run_agent_turn_streaming
 from auth import require_auth
 import chat_store
 
@@ -78,6 +78,57 @@ def chat():
     return jsonify({
         "response": response_text,
         "conversation_id": conversation_id
+    })
+
+
+@app.route("/chat/stream", methods=["POST"])
+@require_auth
+def chat_stream():
+    data = request.get_json()
+    user_message = data.get("message", "").strip()
+    conversation_id = data.get("conversation_id")
+    user_id = request.clerk_user_id
+
+    if not user_message:
+        return jsonify({"error": "Empty message"}), 400
+
+    # Get or create conversation (scoped to user)
+    convo = None
+    if conversation_id:
+        convo = chat_store.get_conversation(conversation_id)
+        if convo and convo.get("user_id") != user_id:
+            convo = None
+
+    if not convo:
+        conversation_id = str(uuid.uuid4())
+        chat_store.create_conversation(conversation_id, user_message[:60], user_id=user_id, username=request.clerk_username)
+        convo = chat_store.get_conversation(conversation_id)
+
+    messages = convo["messages"]
+    messages.append({"role": "user", "content": user_message})
+
+    def generate():
+        import json as _json
+        # Send conversation_id first
+        yield f"data: {_json.dumps({'type': 'meta', 'conversation_id': conversation_id})}\n\n"
+
+        try:
+            for event_type, payload in run_agent_turn_streaming(messages, log_fn=app.logger.info):
+                if event_type == "token":
+                    yield f"data: {_json.dumps({'type': 'token', 'text': payload})}\n\n"
+                elif event_type == "tool":
+                    yield f"data: {_json.dumps({'type': 'tool', 'name': payload})}\n\n"
+        except Exception as e:
+            app.logger.exception("Agent streaming error")
+            yield f"data: {_json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+        # Persist conversation after streaming completes
+        chat_store.update_messages(conversation_id, messages)
+        yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
     })
 
 
