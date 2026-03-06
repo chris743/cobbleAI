@@ -180,3 +180,19 @@ entries:
     on fewer blocks with larger quantities rather than many small picks from different
     blocks for operational efficiency.
   verified: true
+- timestamp: '2026-03-06T09:14:39.056846'
+  category: business_rule
+  key: labor_data_location
+  value: Labor costs and workforce data are in rpt.vw_LaborSummaryDaily_Combined table
+    from UKG system. Use this for any labor, payroll, headcount, or labor cost analysis
+    questions. Always use _num suffix columns for calculations. Cannot filter soft-deleted
+    records due to system keyword restriction.
+  verified: false
+- timestamp: '2026-03-06T10:55:31.853709'
+  category: business_rule
+  key: production_volume_timing
+  value: 'For production volume questions: Use repack outputs (rpt.vw_IC_REPACKING_OutputByRun)
+    for day-of/current data since product is packed but not yet shipped. Use shipment
+    data (rpt.vw_Shipments_RS) for historical analysis of what actually moved out.
+    Day-of production = what we''re making right now via repacks.'
+  verified: false

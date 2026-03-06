@@ -497,3 +497,46 @@ entries:
   notes: Shows 14-day rolling average packout percentages for NAVEL oranges by size
     and grade. Remember to multiply pct_of_commodity by 100 for display.
   verified: false
+- timestamp: '2026-03-06T09:11:05.290615'
+  question: Show inventory for entire commodity pivoted by size and grade
+  sql: "SELECT \n    Size,\n    SUM(CASE WHEN Grade = 'FANCY' THEN AvailableQuantity\
+    \ ELSE 0 END) as FANCY_Bins,\n    SUM(CASE WHEN Grade = 'CHOICE' THEN AvailableQuantity\
+    \ ELSE 0 END) as CHOICE_Bins,\n    SUM(CASE WHEN Grade = 'EXP FANCY' THEN AvailableQuantity\
+    \ ELSE 0 END) as EXP_FANCY_Bins,\n    SUM(CASE WHEN Grade = 'EXP COMBO' THEN AvailableQuantity\
+    \ ELSE 0 END) as EXP_COMBO_Bins,\n    SUM(CASE WHEN Grade = 'HBE FANCY' THEN AvailableQuantity\
+    \ ELSE 0 END) as HBE_FANCY_Bins,\n    SUM(AvailableQuantity) as Total_Bins\nFROM\
+    \ dbo.VW_BININVENTORY\nWHERE AvailableQuantity > 0\n  AND Commodity = 'NAVEL'\n\
+    \  AND Grade != 'JUICE'\nGROUP BY Size\nORDER BY Size"
+  notes: This pivoted format with size on Y-axis and grades as columns provides excellent
+    overview of commodity inventory. Always exclude juice grade and include totals
+    row and column. User prefers this format for full commodity inventory displays.
+  verified: false
+- timestamp: '2026-03-06T09:14:33.951927'
+  question: Labor cost summary by day and department
+  sql: "-- Daily breakdown\nSELECT\n  [Counter Date],\n  COUNT(DISTINCT [Employee\
+    \ Id]) as Headcount,\n  SUM([Total Hours_num]) as TotalHours,\n  SUM([Regular\
+    \ Hours_num]) as RegularHours,\n  SUM([Daily Overtime Hours_num]) as DailyOvertimeHours,\n\
+    \  SUM([Weekly Overtime Hours_num]) as WeeklyOvertimeHours,\n  SUM([Double Time\
+    \ Hours_num]) as DoubleTimeHours,\n  SUM([Regular Pay_num]) as RegularPay,\n \
+    \ SUM([Overtime Pay_num]) as DailyOvertimePay,\n  SUM([Weekly Overtime Pay_num])\
+    \ as WeeklyOvertimePay,\n  SUM([Double Time Pay_num]) as DoubleTimePay,\n  SUM([Total\
+    \ Pay_num]) as TotalPay,\n  SUM([Total Pay_num]) / NULLIF(SUM([Total Hours_num]),\
+    \ 0) as AvgEffectiveRate\nFROM rpt.vw_LaborSummaryDaily_Combined\nWHERE [Counter\
+    \ Date] >= DATEADD(day, -7, CAST(GETDATE() AS DATE))\n  AND [Counter Date] < CAST(GETDATE()\
+    \ AS DATE)\nGROUP BY [Counter Date]\nORDER BY [Counter Date] DESC\n\n-- Department\
+    \ breakdown\nSELECT\n  [Cost Centers(2)] as Department,\n  COUNT(DISTINCT [Employee\
+    \ Id]) as Headcount,\n  SUM([Total Hours_num]) as TotalHours,\n  SUM([Regular\
+    \ Pay_num]) as RegularPay,\n  SUM([Overtime Pay_num] + [Weekly Overtime Pay_num]\
+    \ + [Double Time Pay_num]) as OvertimePay,\n  SUM([Total Pay_num]) as TotalPay,\n\
+    \  SUM([Total Pay_num]) / NULLIF(SUM([Total Hours_num]), 0) as AvgEffectiveRate\n\
+    FROM rpt.vw_LaborSummaryDaily_Combined\nWHERE [Counter Date] >= DATEADD(day, -7,\
+    \ CAST(GETDATE() AS DATE))\n  AND [Counter Date] < CAST(GETDATE() AS DATE)\n \
+    \ AND [Cost Centers(2)] IS NOT NULL\nGROUP BY [Cost Centers(2)]\nORDER BY TotalPay\
+    \ DESC"
+  notes: 'Labor cost analysis from UKG data in rpt.vw_LaborSummaryDaily_Combined.
+    Always use _num suffix columns for calculations. Note: cannot filter on is_deleted
+    column due to system restrictions on DELETE keyword, but data should be mostly
+    clean. Key insights: show daily and department breakdowns, calculate overtime
+    percentage, highlight high-cost areas like packing operations, and note facility
+    splits (Sanger vs Reedley).'
+  verified: false

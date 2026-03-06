@@ -1,1 +1,11 @@
 .env
+venv/
+exports/
+__pycache__/
+*.pyc
+
+# Frontend
+norman_frontend/node_modules/
+norman_frontend/dist/
+norman_frontend/dist-ssr/
+norman_frontend/*.local
