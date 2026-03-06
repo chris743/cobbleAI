@@ -8,20 +8,27 @@ CobbleAI is a Python-based AI data warehouse agent for a citrus packing operatio
 
 ## Tech Stack
 
-- **Backend**: Flask 3.1.3 (Python 3)
-- **AI**: Anthropic Claude API (`anthropic` SDK) with agentic tool-calling loop
+- **Backend**: Flask 3.1 (Python 3), served via Gunicorn (`--timeout 300 --workers 3`) on port 8000
+- **AI**: Anthropic Claude API (`anthropic` SDK) with agentic tool-calling loop, streaming via SSE
 - **Database**: Microsoft SQL Server via pyodbc (ODBC Driver 17)
-- **Frontend**: Single-page HTML/JS with marked.js (markdown) and Chart.js (visualization)
+- **Persistence**: MongoDB Atlas (`chat_store.py`) for conversation history
+- **Auth**: Clerk — React frontend (`@clerk/react`), backend JWT/JWKS verification (`auth.py`)
+- **Frontend**: React (Vite) on port 5000 with marked.js (markdown) and Chart.js (visualization)
 - **Config**: `.env` file loaded via python-dotenv
 
 ## Running the App
 
 ```bash
-# Install dependencies (use the existing venv)
+# Backend
 pip install -r requirements.txt
+python web_app.py                    # Dev: http://localhost:8000
+# Production: gunicorn web_app:app -b 0.0.0.0:8000 --timeout 300 --workers 3
 
-# Start the web server (http://localhost:5000)
-python web_app.py
+# Frontend
+cd norman_frontend
+npm install
+npm run dev                          # Dev: http://localhost:5000 (proxies API to :8000)
+npm run build                        # Production build
 ```
 
 There are no tests, linter, or CI pipeline configured.
@@ -30,9 +37,10 @@ There are no tests, linter, or CI pipeline configured.
 
 ### Entry Points
 
-- `web_app.py` — Flask server with routes: `GET /`, `POST /chat`, `POST /new`, `GET /download/<filename>`
-- `agent_claude.py` — Agent orchestration: initializes Claude client, runs the agentic tool-calling loop via `run_agent_turn(messages, log_fn)`
+- `web_app.py` — Flask API server (port 8000). Routes: `POST /chat/stream` (SSE), `POST /chat`, `GET /conversations`, `GET /conversations/:id`, `GET /download/:filename`. All routes require Clerk auth.
+- `agent_claude.py` — Agent orchestration: `run_agent_turn()` (blocking) and `run_agent_turn_streaming()` (generator yielding SSE events). Uses Claude's streaming API.
 - `agent_tools.py` (~1050 lines) — All 26 tool definitions and implementations
+- `norman_frontend/` — React app (Vite). Main component: `ChatLayout.jsx`. Auth gate in `App.jsx`.
 
 ### Agent Tool System (agent_tools.py)
 
@@ -46,11 +54,24 @@ The file contains several subsystems bundled together:
 
 ### Key Data Flow
 
-1. User sends message via chat UI → `POST /chat`
-2. `web_app.py` appends to in-memory conversation history (dict keyed by conversation_id)
-3. `run_agent_turn()` sends messages + system prompt to Claude API
+1. User sends message via React chat UI → `POST /chat/stream` (SSE)
+2. `web_app.py` loads/creates conversation from MongoDB, appends user message
+3. `run_agent_turn_streaming()` streams tokens + tool events to frontend via SSE
 4. Claude responds with tool calls; agent loop executes tools and feeds results back
-5. Final text response returned to frontend, rendered as markdown
+5. Final text response committed to React state, rendered as markdown with Chart.js
+6. Conversation persisted to MongoDB after streaming completes
+
+### Auth Flow
+
+- Frontend: `@clerk/react` provides `<SignIn>` and session token via `useAuth().getToken()`
+- `api.js` attaches Bearer token to all API requests
+- Backend: `auth.py` decorator `@require_auth` verifies JWT via Clerk JWKS, sets `request.clerk_user_id`
+
+### Chat Persistence (chat_store.py)
+
+- MongoDB Atlas stores conversations with full Anthropic message format
+- `_clean_block()` strips Pydantic-only fields from Anthropic SDK objects before storage (critical — API rejects extra fields like `citations`, `parsed_output`)
+- `get_display_messages()` returns only user/assistant text messages for sidebar display
 
 ### System Prompt & Data Catalog
 
@@ -84,5 +105,7 @@ The agent operates across two databases:
 - SQL queries must be read-only (SELECT/WITH). Forbidden keywords are validated in `QueryExecutor`.
 - The agent learning files (`agent-learning/*.yaml`) are append-only during runtime.
 - Excel exports go to `exports/` with UUID-based filenames.
-- Conversations are stored in-memory only (lost on restart).
-- The `.env` file contains API keys and database credentials — never commit it.
+- Conversations are persisted in MongoDB Atlas (collection: `conversations` in `cobbleai` database).
+- The `.env` file contains API keys, database credentials, Clerk keys, and MongoDB URI — never commit it.
+- Chart rendering uses a custom `marked` renderer that converts ````chart` fenced blocks into placeholder divs, then `renderCharts()` replaces them with Chart.js canvases.
+- Deployment: Cloudflare tunnel proxies `ai.cobblestonecloud.com` → Vite dev server (port 5000), which proxies `/api` to Gunicorn (port 8000). Only the frontend port needs tunnel exposure.

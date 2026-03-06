@@ -1,0 +1,15 @@
+[Unit]
+Description=CobbleAI Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=administrator
+WorkingDirectory=/home/administrator/cobbleai
+EnvironmentFile=/home/administrator/cobbleai/.env
+ExecStart=/home/administrator/cobbleai/venv/bin/python web_app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
