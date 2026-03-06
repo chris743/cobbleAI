@@ -513,6 +513,9 @@ class HarvestPlannerAPI:
                 return "Harvest Planner login failed: bad credentials"
             if resp.status_code == 423:
                 return "Harvest Planner account is locked"
+            content_type = resp.headers.get("content-type", "")
+            if "application/json" not in content_type:
+                return f"Harvest Planner login returned non-JSON ({resp.status_code}): {resp.text[:200]}"
             resp.raise_for_status()
             data = resp.json()
             self.access_token = data["accessToken"]
@@ -531,7 +534,10 @@ class HarvestPlannerAPI:
                 json={"refreshToken": self.refresh_token}
             )
             if resp.status_code != 200:
-                return "Token refresh failed"
+                return f"Token refresh failed (HTTP {resp.status_code})"
+            content_type = resp.headers.get("content-type", "")
+            if "application/json" not in content_type:
+                return f"Token refresh returned non-JSON: {resp.text[:200]}"
             data = resp.json()
             self.access_token = data["accessToken"]
             self.refresh_token = data["refreshToken"]
@@ -570,6 +576,15 @@ class HarvestPlannerAPI:
 
             if resp.status_code == 204:
                 return {"success": True, "message": "Operation completed successfully"}
+
+            # Guard against non-JSON responses (HTML error pages, proxy errors)
+            content_type = resp.headers.get("content-type", "")
+            if "application/json" not in content_type:
+                snippet = resp.text[:300].strip()
+                return {"success": False,
+                        "error": f"HTTP {resp.status_code} - expected JSON but got {content_type or 'unknown content type'}",
+                        "detail": snippet}
+
             if resp.status_code >= 400:
                 try:
                     body = resp.json()
@@ -578,6 +593,10 @@ class HarvestPlannerAPI:
                 return {"success": False, "error": f"HTTP {resp.status_code}", "detail": body}
 
             return {"success": True, "data": resp.json()}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": f"Connection failed to {self.base_url}: {e}"}
+        except httpx.TimeoutException:
+            return {"success": False, "error": f"Request timed out ({self.client.timeout}s) to {url}"}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
