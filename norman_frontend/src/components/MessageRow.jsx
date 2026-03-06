@@ -4,6 +4,19 @@ import { renderCharts } from '../lib/charts'
 
 marked.setOptions({ gfm: true, breaks: true })
 
+// Custom renderer: convert ```chart blocks into placeholder divs for Chart.js
+const renderer = new marked.Renderer()
+const originalCode = renderer.code.bind(renderer)
+renderer.code = function (token) {
+  if (token.lang === 'chart') {
+    // Encode spec as data attribute so renderCharts can pick it up
+    const encoded = token.text.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    return `<div class="chart-placeholder" data-chart-spec="${encoded}"></div>`
+  }
+  return originalCode(token)
+}
+marked.use({ renderer })
+
 export default function MessageRow({ role, content }) {
   const bodyRef = useRef(null)
 

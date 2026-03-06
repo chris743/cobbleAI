@@ -13,14 +13,13 @@ const CHART_PALETTE = [
 const CHART_BORDERS = CHART_PALETTE.map((c) => c.replace('0.7)', '1)'))
 
 /**
- * Find ```chart code blocks in a container element and render Chart.js canvases.
+ * Find chart placeholder divs in a container element and render Chart.js canvases.
  */
 export function renderCharts(container) {
-  const codeBlocks = container.querySelectorAll('code.language-chart')
-  codeBlocks.forEach((code) => {
-    const pre = code.parentElement
+  const placeholders = container.querySelectorAll('.chart-placeholder[data-chart-spec]')
+  placeholders.forEach((el) => {
     try {
-      const spec = JSON.parse(code.textContent)
+      const spec = JSON.parse(el.dataset.chartSpec)
       const wrapper = document.createElement('div')
       wrapper.className = 'chart-container'
 
@@ -33,7 +32,7 @@ export function renderCharts(container) {
 
       const canvas = document.createElement('canvas')
       wrapper.appendChild(canvas)
-      pre.replaceWith(wrapper)
+      el.replaceWith(wrapper)
 
       let chartType = spec.type === 'horizontalBar' ? 'bar' : spec.type
       const datasets = (spec.datasets || []).map((ds, i) => ({
