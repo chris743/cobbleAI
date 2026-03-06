@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5000,
+    allowedHosts: ['ai.cobblestonecloud.com'],
     proxy: {
       '/chat': 'http://localhost:8000',
       '/new': 'http://localhost:8000',

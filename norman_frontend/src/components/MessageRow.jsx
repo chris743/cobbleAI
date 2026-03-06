@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { memo, useRef, useEffect, useMemo } from 'react'
 import { marked } from 'marked'
 import { renderCharts } from '../lib/charts'
 
@@ -9,7 +9,6 @@ const renderer = new marked.Renderer()
 const originalCode = renderer.code.bind(renderer)
 renderer.code = function (token) {
   if (token.lang === 'chart') {
-    // Encode spec as data attribute so renderCharts can pick it up
     const encoded = token.text.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
     return `<div class="chart-placeholder" data-chart-spec="${encoded}"></div>`
   }
@@ -17,14 +16,15 @@ renderer.code = function (token) {
 }
 marked.use({ renderer })
 
-export default function MessageRow({ role, content }) {
+export default memo(function MessageRow({ role, content, streaming }) {
   const bodyRef = useRef(null)
+  const html = useMemo(() => marked.parse(content || ''), [content])
 
   useEffect(() => {
-    if (role === 'agent' && bodyRef.current) {
+    if (role === 'agent' && !streaming && bodyRef.current) {
       renderCharts(bodyRef.current)
     }
-  }, [role, content])
+  }, [role, content, streaming])
 
   const isAgent = role === 'agent'
   const isError = role === 'error'
@@ -42,7 +42,7 @@ export default function MessageRow({ role, content }) {
           <div
             ref={bodyRef}
             className="message-body"
-            dangerouslySetInnerHTML={{ __html: marked.parse(content || '') }}
+            dangerouslySetInnerHTML={{ __html: html }}
           />
         ) : (
           <div className={`message-body ${isError ? 'error-text' : ''}`}>
@@ -52,4 +52,4 @@ export default function MessageRow({ role, content }) {
       </div>
     </div>
   )
-}
+})

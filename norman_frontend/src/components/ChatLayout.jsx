@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useClerk, useUser } from '@clerk/react'
-import { apiGet, apiPost } from '../lib/api'
+import { apiGet, apiPostStream } from '../lib/api'
 import Sidebar from './Sidebar'
 import MessageRow from './MessageRow'
 import ThinkingRow from './ThinkingRow'
@@ -24,6 +24,8 @@ export default function ChatLayout() {
   const [conversations, setConversations] = useState([])
   const [conversationId, setConversationId] = useState(null)
   const [messages, setMessages] = useState([])
+  const [streamingText, setStreamingText] = useState('')
+  const [toolName, setToolName] = useState(null)
   const [isWaiting, setIsWaiting] = useState(false)
   const [input, setInput] = useState('')
 
@@ -53,7 +55,7 @@ export default function ChatLayout() {
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight
     }
-  }, [messages, isWaiting])
+  }, [messages, isWaiting, streamingText])
 
   // Load a conversation from sidebar
   const loadConversation = async (id) => {
@@ -78,7 +80,7 @@ export default function ChatLayout() {
     inputRef.current?.focus()
   }
 
-  // Send message
+  // Send message with streaming
   const sendMessage = async (text) => {
     text = text || input.trim()
     if (!text || isWaiting) return
@@ -86,19 +88,47 @@ export default function ChatLayout() {
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setInput('')
     setIsWaiting(true)
+    setStreamingText('')
+    setToolName(null)
+
+    let fullText = ''
 
     try {
-      const data = await apiPost('/chat', {
+      await apiPostStream('/chat/stream', {
         message: text,
         conversation_id: conversationId,
+      }, (event) => {
+        switch (event.type) {
+          case 'meta':
+            setConversationId(event.conversation_id)
+            break
+          case 'token':
+            fullText += event.text
+            setStreamingText(fullText)
+            setToolName(null)
+            break
+          case 'tool':
+            setToolName(event.name)
+            break
+          case 'error':
+            setMessages((prev) => [...prev, { role: 'error', content: event.message }])
+            break
+          case 'done':
+            break
+        }
       })
-      setConversationId(data.conversation_id)
-      setMessages((prev) => [...prev, { role: 'agent', content: data.response }])
+
+      // Streaming finished — commit the full message
+      if (fullText) {
+        setMessages((prev) => [...prev, { role: 'agent', content: fullText }])
+      }
       loadConversations()
     } catch (err) {
       setMessages((prev) => [...prev, { role: 'error', content: err.message }])
     }
 
+    setStreamingText('')
+    setToolName(null)
     setIsWaiting(false)
     inputRef.current?.focus()
   }
@@ -116,7 +146,7 @@ export default function ChatLayout() {
     e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px'
   }
 
-  const showWelcome = messages.length === 0
+  const showWelcome = messages.length === 0 && !isWaiting
 
   return (
     <>
@@ -165,7 +195,12 @@ export default function ChatLayout() {
               {messages.map((msg, i) => (
                 <MessageRow key={i} role={msg.role} content={msg.content} />
               ))}
-              {isWaiting && <ThinkingRow />}
+              {isWaiting && streamingText && (
+                <MessageRow role="agent" content={streamingText} streaming />
+              )}
+              {isWaiting && !streamingText && (
+                <ThinkingRow toolName={toolName} />
+              )}
             </>
           )}
         </div>
