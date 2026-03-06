@@ -104,56 +104,79 @@ entries:
   key: Style_format_pattern
   value: Style codes are formatted as count-weight-style (e.g., "12-3# CB" = 12 count
     3-pound consumer bags, "8-5# FB" = 8 count 5-pound film bags)
-  verified: false
+  verified: true
 - timestamp: '2026-03-04T16:46:07.603736'
   category: column_meaning
   key: Style_CB_meaning
   value: CB in style codes means "combo bags" (not consumer bags as previously thought)
-  verified: false
+  verified: true
 - timestamp: '2026-03-04T16:46:07.634770'
   category: column_meaning
   key: Style_NB_meaning
   value: NB in style codes means "net bags"
-  verified: false
+  verified: true
 - timestamp: '2026-03-04T16:46:07.663032'
   category: column_meaning
   key: Style_WM_meaning
   value: WM in style codes means "wicketed mesh" bags
-  verified: false
+  verified: true
 - timestamp: '2026-03-04T16:46:07.688222'
   category: column_meaning
   key: Style_HD_meaning
   value: HD in style codes means "header bags"
-  verified: false
+  verified: true
 - timestamp: '2026-03-04T16:53:13.167077'
   category: business_rule
   key: film_bag_size_flexibility
   value: Film bag orders can flex 1 size north (larger fruit) or south (smaller fruit)
     to fill orders. This allows production flexibility when exact size inventory is
     limited.
-  verified: false
+  verified: true
 - timestamp: '2026-03-04T21:07:40.059505'
   category: business_rule
   key: food_bank_orders_in_lbs
   value: 'Food bank orders: ORDERQNT is in POUNDS, not cartons. Divide by 40 to get
     carton equivalents. The TRI-WALL order of 39,156 lbs = 979 cartons, not 734,175.'
-  verified: false
+  verified: true
 - timestamp: '2026-03-04T21:13:23.231271'
   category: business_rule
   key: size_ordering_citrus
   value: 'Citrus sizes: LOWER number = LARGER fruit. So 048 > 056 > 072 > 088 > 113
     > 138. Size 072 is larger fruit than 088, and 088 is larger than 113.'
-  verified: false
+  verified: true
 - timestamp: '2026-03-04T21:26:49.945665'
   category: business_rule
   key: equipment_slang
   value: 'User slang terms: ''giro'' = Film Bag line, ''fox'' = Combo Bag/WM line,
     ''vex''/''vexar'' = Net Bag line'
-  verified: false
+  verified: true
 - timestamp: '2026-03-05T09:21:36.556392'
   category: business_rule
   key: KRP_sample_orders
   value: Kings River Packing, LP is the company's marketing arm. Orders to KRP are
     internal sample/marketing reimbursements, not real market sales. Should exclude
     from pricing analysis and market reporting.
-  verified: false
+  verified: true
+- timestamp: '2026-03-05T15:26:53.393376'
+  category: business_rule
+  key: juice_orders_default_filter
+  value: 'Always exclude juice orders (Grade = ''JUICE'') from analysis unless user
+    specifically asks for juice data. Juice orders distort volume analysis since they
+    use different units (lbs vs cartons) and have massive equivalent factors. Default
+    filter: AND Grade != ''JUICE'''
+  verified: true
+- timestamp: '2026-03-05T15:31:11.792248'
+  category: business_rule
+  key: navel_variety_timing
+  value: 'Navel varieties by harvest timing: Early/Mid-season = Washington, Atwood,
+    Chislet, Autumn Gold, Fisher, Barnfield, Gillette. Late season = Powell, Lane
+    Late. Always consider variety timing when making picking recommendations.'
+  verified: true
+- timestamp: '2026-03-05T15:37:23.437381'
+  category: business_rule
+  key: pick_plan_optimization
+  value: Pick plans should use base 50 bin quantities as much as possible (50, 100,
+    150, 200, etc.) and avoid spreading picks across many different locations. Focus
+    on fewer blocks with larger quantities rather than many small picks from different
+    blocks for operational efficiency.
+  verified: true

@@ -25,7 +25,8 @@ import yaml
 import json
 import os
 import uuid
-from datetime import datetime
+import httpx
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Any
 from decimal import Decimal
@@ -50,27 +51,37 @@ CONFIG = {
     "learning_path": os.getenv("LEARNING_PATH", "./agent-learning"),
     "max_rows": int(os.getenv("MAX_ROWS", "5000")),
     "query_timeout": int(os.getenv("QUERY_TIMEOUT", "30")),
+    # Harvest Planner API
+    "hp_base_url": os.getenv("HP_BASE_URL", "").rstrip("/"),
+    "hp_username": os.getenv("HP_USERNAME", ""),
+    "hp_password": os.getenv("HP_PASSWORD", ""),
 }
 
-# Build connection string
-if CONFIG["trusted_connection"]:
-    CONNECTION_STRING = (
+# Build connection strings
+def _build_conn_string(database: str) -> str:
+    if CONFIG["trusted_connection"]:
+        return (
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={CONFIG['server']};"
+            f"DATABASE={database};"
+            f"Trusted_Connection=yes;"
+        )
+    return (
         f"DRIVER={{ODBC Driver 17 for SQL Server}};"
         f"SERVER={CONFIG['server']};"
-        f"DATABASE={CONFIG['database']};"
-        f"Trusted_Connection=yes;"
-    )
-else:
-    CONNECTION_STRING = (
-        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-        f"SERVER={CONFIG['server']};"
-        f"DATABASE={CONFIG['database']};"
+        f"DATABASE={database};"
         f"UID={CONFIG['username']};"
         f"PWD={CONFIG['password']};"
         f"Encrypt=no;"
         f"TrustServerCertificate=yes;"
         f"Application Name=DM03_Agent;"
     )
+
+CONNECTION_STRINGS = {
+    "DM03": _build_conn_string("DM03"),
+    "DM01": _build_conn_string("DM01"),
+}
+CONNECTION_STRING = CONNECTION_STRINGS["DM03"]  # default
 
 
 # =============================================================================
@@ -113,15 +124,19 @@ class QueryExecutor:
             return val.hex()
         return val
     
-    def execute(self, sql: str, max_rows: Optional[int] = None) -> dict:
+    def execute(self, sql: str, max_rows: Optional[int] = None, database: str = None) -> dict:
         max_rows = min(max_rows or self.max_rows, self.max_rows)
-        
+
         is_valid, error = self._validate_query(sql)
         if not is_valid:
             return {"success": False, "error": error, "sql": sql}
-        
+
+        conn_str = self.connection_string
+        if database and database.upper() in CONNECTION_STRINGS:
+            conn_str = CONNECTION_STRINGS[database.upper()]
+
         try:
-            conn = pyodbc.connect(self.connection_string, timeout=self.timeout)
+            conn = pyodbc.connect(conn_str, timeout=self.timeout)
             cursor = conn.cursor()
             cursor.execute(sql)
             
@@ -450,6 +465,150 @@ class ExcelExporter:
 
 
 # =============================================================================
+# HARVEST PLANNER API CLIENT
+# =============================================================================
+
+class HarvestPlannerAPI:
+    """HTTP client for the Harvest Planner REST API with JWT auth."""
+
+    def __init__(self, base_url: str = CONFIG["hp_base_url"],
+                 username: str = CONFIG["hp_username"],
+                 password: str = CONFIG["hp_password"]):
+        self.base_url = base_url
+        self.username = username
+        self.password = password
+        self.access_token: Optional[str] = None
+        self.refresh_token: Optional[str] = None
+        self.token_expires_at: Optional[datetime] = None
+        self.client = httpx.Client(timeout=30)
+
+    def _is_configured(self) -> bool:
+        return bool(self.base_url and self.username and self.password)
+
+    def _ensure_auth(self) -> Optional[str]:
+        """Login or refresh token as needed. Returns error string or None."""
+        if not self._is_configured():
+            return "Harvest Planner API not configured. Set HP_BASE_URL, HP_USERNAME, HP_PASSWORD in .env"
+
+        # If we have a valid token, use it
+        if self.access_token and self.token_expires_at:
+            if datetime.now(timezone.utc) < self.token_expires_at:
+                return None
+            # Try refresh
+            if self.refresh_token:
+                err = self._refresh()
+                if err is None:
+                    return None
+
+        # Login fresh
+        return self._login()
+
+    def _login(self) -> Optional[str]:
+        try:
+            resp = self.client.post(
+                f"{self.base_url}/api/v1/auth/login",
+                json={"username": self.username, "password": self.password}
+            )
+            if resp.status_code == 401:
+                return "Harvest Planner login failed: bad credentials"
+            if resp.status_code == 423:
+                return "Harvest Planner account is locked"
+            resp.raise_for_status()
+            data = resp.json()
+            self.access_token = data["accessToken"]
+            self.refresh_token = data["refreshToken"]
+            self.token_expires_at = datetime.fromisoformat(
+                data["accessTokenExpiresAt"].replace("Z", "+00:00")
+            )
+            return None
+        except Exception as e:
+            return f"Harvest Planner login error: {e}"
+
+    def _refresh(self) -> Optional[str]:
+        try:
+            resp = self.client.post(
+                f"{self.base_url}/api/v1/auth/refresh",
+                json={"refreshToken": self.refresh_token}
+            )
+            if resp.status_code != 200:
+                return "Token refresh failed"
+            data = resp.json()
+            self.access_token = data["accessToken"]
+            self.refresh_token = data["refreshToken"]
+            self.token_expires_at = datetime.fromisoformat(
+                data["accessTokenExpiresAt"].replace("Z", "+00:00")
+            )
+            return None
+        except Exception as e:
+            return f"Token refresh error: {e}"
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.access_token}"}
+
+    def _request(self, method: str, path: str, params: dict = None,
+                 json_body: dict = None, auth_required: bool = True) -> dict:
+        """Make an API request with automatic auth handling."""
+        if auth_required:
+            err = self._ensure_auth()
+            if err:
+                return {"success": False, "error": err}
+
+        url = f"{self.base_url}{path}"
+        headers = self._headers() if auth_required and self.access_token else {}
+
+        try:
+            resp = self.client.request(method, url, params=params,
+                                       json=json_body, headers=headers)
+            if resp.status_code == 401 and auth_required:
+                # Token may have expired mid-request, retry with fresh login
+                err = self._login()
+                if err:
+                    return {"success": False, "error": err}
+                headers = self._headers()
+                resp = self.client.request(method, url, params=params,
+                                           json=json_body, headers=headers)
+
+            if resp.status_code == 204:
+                return {"success": True, "message": "Operation completed successfully"}
+            if resp.status_code >= 400:
+                try:
+                    body = resp.json()
+                except Exception:
+                    body = resp.text
+                return {"success": False, "error": f"HTTP {resp.status_code}", "detail": body}
+
+            return {"success": True, "data": resp.json()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # --- Harvest Plans (auth required) ---
+    def create_harvest_plan(self, plan_data: dict) -> dict:
+        return self._request("POST", "/api/v1/harvestplans", json_body=plan_data)
+
+    def update_harvest_plan(self, plan_id: str, plan_data: dict) -> dict:
+        return self._request("PUT", f"/api/v1/harvestplans/{plan_id}",
+                             json_body=plan_data)
+
+    def delete_harvest_plan(self, plan_id: str) -> dict:
+        return self._request("DELETE", f"/api/v1/harvestplans/{plan_id}")
+
+    # --- Harvest Contractors ---
+    def create_contractor(self, contractor_data: dict) -> dict:
+        return self._request("POST", "/api/v1/harvestcontractors",
+                             json_body=contractor_data, auth_required=False)
+
+    # --- Placeholder Growers (auth required) ---
+    def create_placeholder_grower(self, grower_data: dict) -> dict:
+        return self._request("POST", "/api/v1/placeholdergrower",
+                             json_body=grower_data)
+
+    # --- Production Runs (auth required) ---
+    def create_production_run(self, run_data: dict) -> dict:
+        return self._request("POST", "/api/v1/productionruns", json_body=run_data)
+
+
+
+# =============================================================================
 # AGENT TOOLKIT - Main Interface
 # =============================================================================
 
@@ -464,6 +623,7 @@ class AgentToolkit:
         self.context = ContextLoader()
         self.learning = LearningManager()
         self.exporter = ExcelExporter()
+        self.harvest_planner = HarvestPlannerAPI()
     
     def get_tool_definitions(self) -> list[dict]:
         """Return tool definitions for LLM function calling."""
@@ -471,7 +631,7 @@ class AgentToolkit:
             # === QUERY TOOLS ===
             {
                 "name": "execute_sql",
-                "description": "Execute a read-only SQL query against the DM03 data warehouse. Only SELECT queries are allowed. Returns columns, rows, and row count.",
+                "description": "Execute a read-only SQL query against a data warehouse. Only SELECT queries are allowed. Returns columns, rows, and row count. Defaults to DM03. Use database='DM01' for harvest planning data (dbo.harvestplanentry, dbo.harvestcontractors, dbo.processproductionruns).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -482,6 +642,11 @@ class AgentToolkit:
                         "max_rows": {
                             "type": "integer",
                             "description": "Maximum rows to return (default 1000, max 5000)"
+                        },
+                        "database": {
+                            "type": "string",
+                            "enum": ["DM03", "DM01"],
+                            "description": "Target database. DM03 (default) for inventory/sales/operations. DM01 for harvest planning data."
                         }
                     },
                     "required": ["sql"]
@@ -679,7 +844,91 @@ class AgentToolkit:
                     },
                     "required": ["columns", "rows"]
                 }
-            }
+            },
+
+            # === HARVEST PLANNER WRITE TOOLS (via API) ===
+            {
+                "name": "hp_create_harvest_plan",
+                "description": "Create a new harvest plan via the Harvest Planner API. Link a grower block (or placeholder grower) with contractors, rates, pool, and scheduling. Fields: grower_block_source_database, grower_block_id (GABLOCKIDX), placeholder_grower_id (GUID, use instead of block if grower not in system), field_representative_id (user ID), planned_bins, contractor_id, harvesting_rate, hauler_id, hauling_rate, forklift_contractor_id, forklift_rate, pool_id (POOLIDX), notes_general, deliver_to, packed_by, date (YYYY-MM-DD), bins.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "plan_data": {
+                            "type": "object",
+                            "description": "Harvest plan fields to set"
+                        }
+                    },
+                    "required": ["plan_data"]
+                }
+            },
+            {
+                "name": "hp_update_harvest_plan",
+                "description": "Update an existing harvest plan via the Harvest Planner API. Pass only the fields to change.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "plan_id": {"type": "string", "description": "The harvest plan GUID to update"},
+                        "plan_data": {
+                            "type": "object",
+                            "description": "Fields to update"
+                        }
+                    },
+                    "required": ["plan_id", "plan_data"]
+                }
+            },
+            {
+                "name": "hp_delete_harvest_plan",
+                "description": "Delete a harvest plan via the Harvest Planner API by its ID (GUID).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "plan_id": {"type": "string", "description": "The harvest plan GUID to delete"}
+                    },
+                    "required": ["plan_id"]
+                }
+            },
+            {
+                "name": "hp_create_contractor",
+                "description": "Create a new harvest contractor via the Harvest Planner API. Fields: name (required), primary_contact_name, primary_contact_phone, office_phone, mailing_address, provides_trucking (bool), provides_picking (bool), provides_forklift (bool).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "contractor_data": {
+                            "type": "object",
+                            "description": "Contractor fields to set"
+                        }
+                    },
+                    "required": ["contractor_data"]
+                }
+            },
+            {
+                "name": "hp_create_placeholder_grower",
+                "description": "Create a placeholder grower via the Harvest Planner API for use in harvest plans when the real block doesn't exist yet. Fields: grower_name (required), commodity_name (required), is_active (default true), notes.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "grower_data": {
+                            "type": "object",
+                            "description": "Placeholder grower fields"
+                        }
+                    },
+                    "required": ["grower_data"]
+                }
+            },
+            {
+                "name": "hp_create_production_run",
+                "description": "Create a production run via the Harvest Planner API to track processing/packing of harvested fruit. Fields: source_database (required), gablockidx (required, > 0), bins, run_date, pick_date, location, pool, notes, row_order, run_status, batch_id, time_started, time_completed.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "run_data": {
+                            "type": "object",
+                            "description": "Production run fields"
+                        }
+                    },
+                    "required": ["run_data"]
+                }
+            },
         ]
     
     def handle_tool_call(self, tool_name: str, parameters: dict) -> dict:
@@ -688,7 +937,7 @@ class AgentToolkit:
         handlers = {
             # Query tools
             "execute_sql": lambda p: self.executor.execute(
-                p.get("sql", ""), p.get("max_rows")
+                p.get("sql", ""), p.get("max_rows"), p.get("database")
             ),
             
             # Context tools
@@ -716,6 +965,26 @@ class AgentToolkit:
             # Export tools
             "export_excel": lambda p: self.exporter.export(
                 p.get("columns", []), p.get("rows", []), p.get("filename", "")
+            ),
+
+            # Harvest Planner write tools (via API)
+            "hp_create_harvest_plan": lambda p: self.harvest_planner.create_harvest_plan(
+                p.get("plan_data", {})
+            ),
+            "hp_update_harvest_plan": lambda p: self.harvest_planner.update_harvest_plan(
+                p.get("plan_id", ""), p.get("plan_data", {})
+            ),
+            "hp_delete_harvest_plan": lambda p: self.harvest_planner.delete_harvest_plan(
+                p.get("plan_id", "")
+            ),
+            "hp_create_contractor": lambda p: self.harvest_planner.create_contractor(
+                p.get("contractor_data", {})
+            ),
+            "hp_create_placeholder_grower": lambda p: self.harvest_planner.create_placeholder_grower(
+                p.get("grower_data", {})
+            ),
+            "hp_create_production_run": lambda p: self.harvest_planner.create_production_run(
+                p.get("run_data", {})
             ),
         }
         

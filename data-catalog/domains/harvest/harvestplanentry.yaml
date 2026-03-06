@@ -1,0 +1,158 @@
+# Schema documentation for dbo.harvestplanentry
+# Harvest plan records - DM01 database
+
+name: dbo.harvestplanentry
+short_name: harvestplanentry
+schema: dbo
+domain: harvest
+database: DM01
+
+description: |
+  Harvest plan entries. Each row is a plan to pick a specific grower block on a given date,
+  with assigned contractors for picking, hauling, and forklift, plus rates and pool assignment.
+
+  A plan can reference either a real grower block (grower_block_id -> GABLOCKIDX) or a
+  placeholder grower (placeholder_grower_id) when the block isn't yet in the system.
+
+business_purpose: |
+  - Schedule which blocks to harvest and when
+  - Assign picking, hauling, and forklift contractors with rates
+  - Track planned vs actual bins per block
+  - Assign field representatives to oversee harvest
+  - Link harvested fruit to marketing pools
+
+columns:
+  # === IDENTIFICATION ===
+  - name: id
+    type: uniqueidentifier
+    nullable: false
+    description: "Primary key (GUID). Auto-generated on insert."
+
+  # === GROWER BLOCK LINK ===
+  - name: grower_block_source_database
+    type: nvarchar(20)
+    nullable: false
+    default: "'DM01'"
+    description: "Source database for the grower block. Always 'COBBLESTONE' in practice — this means grower_block_id and pool_id reference Cobblestone-system IDs (GABLOCKIDX and POOLIDX respectively)."
+
+  - name: grower_block_id
+    type: int
+    nullable: false
+    description: "FK to blocks GABLOCKIDX in the Cobblestone source database. Join to block data using grower_block_id = GABLOCKIDX WHERE source_database = 'COBBLESTONE'."
+
+  - name: placeholder_grower_id
+    type: uniqueidentifier
+    nullable: true
+    description: "FK to placeholder_growers table. Used instead of grower_block_id when the real block doesn't exist yet."
+
+  # === PLANNING ===
+  - name: planned_bins
+    type: int
+    nullable: true
+    default: "0"
+    description: "Estimated number of bins to harvest from this block."
+
+  - name: date
+    type: date
+    nullable: true
+    description: "Planned harvest date (YYYY-MM-DD)."
+
+  - name: bins
+    type: int
+    nullable: true
+    default: "0"
+    description: "Actual bins harvested (updated after picking)."
+
+  - name: field_representative_id
+    type: int
+    nullable: true
+    description: "FK to users table. The field rep assigned to oversee this harvest."
+
+  # === CONTRACTORS ===
+  - name: contractor_id
+    type: bigint
+    nullable: true
+    description: "FK to harvestcontractors.id. The picking/harvesting contractor."
+
+  - name: harvesting_rate
+    type: decimal
+    nullable: true
+    description: "Rate paid to the picking contractor (per bin)."
+
+  - name: hauler_id
+    type: bigint
+    nullable: true
+    description: "FK to harvestcontractors.id. The trucking/hauling contractor."
+
+  - name: hauling_rate
+    type: decimal
+    nullable: true
+    description: "Rate paid to the hauling contractor (per bin)."
+
+  - name: forklift_contractor_id
+    type: bigint
+    nullable: true
+    description: "FK to harvestcontractors.id. The forklift contractor."
+
+  - name: forklift_rate
+    type: decimal
+    nullable: true
+    description: "Rate paid to the forklift contractor (per bin)."
+
+  # === POOL / DESTINATION ===
+  - name: pool_id
+    type: int
+    nullable: true
+    description: "FK to pools POOLIDX in the Cobblestone source database. Join to pool data using pool_id = POOLIDX. Pools define the marketing pool the harvested fruit is assigned to."
+
+  - name: deliver_to
+    type: varchar(30)
+    nullable: true
+    default: "'CF'"
+    description: "Delivery destination. Typically 'Cobble' or 'CF' for Cobblestone facility."
+
+  - name: packed_by
+    type: varchar(30)
+    nullable: true
+    default: "'CF'"
+    description: "Who packs the fruit. Typically 'CF' for Cobblestone."
+
+  - name: notes_general
+    type: varchar(max)
+    nullable: true
+    description: "Free-text notes about this harvest plan."
+
+relationships:
+  - target: "Cobblestone blocks (DM03: dbo.VW_BLOCKS or DM01 block tables)"
+    join: "harvestplanentry.grower_block_id = blocks.GABLOCKIDX WHERE source_database = 'COBBLESTONE'"
+    description: "Grower block - grower_block_id is the GABLOCKIDX from the Cobblestone system"
+  - target: "Cobblestone pools (DM03: dbo.VW_CF_POOLS)"
+    join: "harvestplanentry.pool_id = pools.POOLIDX WHERE source_database = 'COBBLESTONE'"
+    description: "Marketing pool - pool_id is the POOLIDX from the Cobblestone system"
+  - target: dbo.harvestcontractors
+    join: "harvestplanentry.contractor_id = harvestcontractors.id"
+    description: "Picking contractor"
+  - target: dbo.harvestcontractors
+    join: "harvestplanentry.hauler_id = harvestcontractors.id"
+    description: "Hauling contractor"
+  - target: dbo.harvestcontractors
+    join: "harvestplanentry.forklift_contractor_id = harvestcontractors.id"
+    description: "Forklift contractor"
+
+sample_queries:
+  - description: "All harvest plans for a specific date"
+    sql: |
+      SELECT h.id, h.grower_block_id, h.planned_bins, h.bins, h.date,
+             c.name as picking_contractor, hc2.name as hauler, h.pool_id
+      FROM dbo.harvestplanentry h
+      LEFT JOIN dbo.harvestcontractors c ON h.contractor_id = c.id
+      LEFT JOIN dbo.harvestcontractors hc2 ON h.hauler_id = hc2.id
+      WHERE h.date = '2026-03-05'
+
+  - description: "Plans with planned vs actual bins"
+    sql: |
+      SELECT grower_block_id, date, planned_bins, bins,
+             bins - planned_bins as variance
+      FROM dbo.harvestplanentry
+      WHERE date >= '2026-03-01' AND date <= '2026-03-31'
+      ORDER BY date

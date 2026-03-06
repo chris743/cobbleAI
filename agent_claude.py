@@ -58,14 +58,15 @@ def run_agent_turn(messages: list, max_turns: int = None, log_fn=None) -> str:
     accumulated_text = []
 
     for turn in range(max_turns):
-        # Call Claude
-        response = client.messages.create(
+        # Call Claude with streaming (required for high max_tokens)
+        with client.messages.stream(
             model=MODEL,
-            max_tokens=16384,
+            max_tokens=30000,
             system=SYSTEM_PROMPT,
             tools=tools,
             messages=messages
-        )
+        ) as stream:
+            response = stream.get_final_message()
 
         # Collect any text from this response (may appear alongside tool calls)
         for block in response.content:

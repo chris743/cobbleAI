@@ -1,0 +1,24 @@
+# Harvest Planning Domain
+# Database: DM01 (NOT DM03)
+
+name: Harvest Planning
+database: DM01
+description: |
+  Harvest planning and field operations. Covers planning which blocks to pick,
+  assigning contractors (picking, hauling, forklift), scheduling dates,
+  and tracking production runs through the packing process.
+
+  All tables in this domain live on DM01, not DM03.
+  Use execute_sql with database="DM01" to query these tables.
+
+tables:
+  - dbo.harvestplanentry
+  - dbo.harvestcontractors
+  - dbo.processproductionruns
+
+key_concepts:
+  - "Harvest plans link grower blocks to contractors, rates, pools, and dates"
+  - "Contractors can provide picking, trucking/hauling, and/or forklift services"
+  - "Production runs track actual packing/processing after fruit is harvested"
+  - "grower_block_id references GABLOCKIDX from the block master data"
+  - "source_database is typically 'COBBLESTONE' for CF-origin blocks"

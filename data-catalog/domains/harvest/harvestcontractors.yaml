@@ -1,0 +1,85 @@
+# Schema documentation for dbo.harvestcontractors
+# Harvest contractor master data - DM01 database
+
+name: dbo.harvestcontractors
+short_name: harvestcontractors
+schema: dbo
+domain: harvest
+database: DM01
+
+description: |
+  Master list of harvest contractors. Each contractor can provide one or more services:
+  picking, trucking/hauling, and forklift. Referenced by harvest plans up to 3 times
+  (once per service type).
+
+business_purpose: |
+  - Maintain contractor directory with contact info
+  - Track which services each contractor provides
+  - Referenced by harvest plans for contractor assignment
+  - Color field used for UI display in the harvest planner calendar
+
+columns:
+  - name: id
+    type: bigint
+    nullable: false
+    description: "Primary key. Auto-incrementing identity."
+
+  - name: name
+    type: varchar(100)
+    nullable: false
+    description: "Contractor company name (e.g., 'Cal Fresh', 'Pacific Farm', 'Ag Pros')."
+
+  - name: primary_contact_name
+    type: varchar(50)
+    nullable: true
+    description: "Name of the primary contact person at the contractor."
+
+  - name: primary_contact_phone
+    type: varchar(20)
+    nullable: true
+    description: "Phone number of the primary contact."
+
+  - name: office_phone
+    type: varchar(20)
+    nullable: true
+    description: "Contractor office phone number."
+
+  - name: mailing_address
+    type: varchar(100)
+    nullable: true
+    description: "Contractor mailing address."
+
+  - name: provides_trucking
+    type: bit
+    nullable: true
+    description: "True if this contractor provides trucking/hauling services."
+
+  - name: provides_picking
+    type: bit
+    nullable: true
+    description: "True if this contractor provides fruit picking services."
+
+  - name: provides_forklift
+    type: bit
+    nullable: true
+    description: "True if this contractor provides forklift services."
+
+  - name: color
+    type: varchar(50)
+    nullable: true
+    description: "Hex color code for UI display (e.g., '#a12178'). Used in harvest planner calendar."
+
+sample_queries:
+  - description: "All contractors that provide picking"
+    sql: |
+      SELECT id, name, primary_contact_name, primary_contact_phone
+      FROM dbo.harvestcontractors
+      WHERE provides_picking = 1
+
+  - description: "Contractor usage in harvest plans"
+    sql: |
+      SELECT c.name, COUNT(*) as plan_count
+      FROM dbo.harvestplanentry h
+      JOIN dbo.harvestcontractors c ON h.contractor_id = c.id
+      GROUP BY c.name
+      ORDER BY plan_count DESC

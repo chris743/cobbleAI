@@ -1,0 +1,119 @@
+# Schema documentation for dbo.processproductionruns
+# Production run tracking - DM01 database
+
+name: dbo.processproductionruns
+short_name: processproductionruns
+schema: dbo
+domain: harvest
+database: DM01
+
+description: |
+  Production run records that track actual packing/processing of harvested fruit.
+  Each row represents a run of bins from a specific grower block through the packing line.
+  Linked to blocks via source_database + GABLOCKIDX composite key.
+
+business_purpose: |
+  - Track which blocks are being processed and when
+  - Record actual bins run through the packing line
+  - Track run timing (started/completed) for throughput analysis
+  - Assign runs to pools and locations
+  - Support production scheduling and status tracking
+
+columns:
+  - name: id
+    type: uniqueidentifier
+    nullable: false
+    description: "Primary key (GUID). Auto-generated on insert."
+
+  - name: source_database
+    type: nvarchar(20)
+    nullable: false
+    description: "Source system for the block. Typically 'COBBLESTONE'."
+
+  - name: GABLOCKIDX
+    type: int
+    nullable: false
+    description: "FK to blocks. Identifies which grower block this run is processing. Used with source_database as composite key."
+
+  - name: bins
+    type: int
+    nullable: false
+    default: "0"
+    description: "Number of bins in this production run."
+
+  - name: run_date
+    type: date
+    nullable: true
+    description: "Date the production run is scheduled or occurred."
+
+  - name: pick_date
+    type: date
+    nullable: true
+    description: "Date the fruit was picked in the field (before processing)."
+
+  - name: location
+    type: nvarchar(255)
+    nullable: true
+    description: "Packing location or line identifier."
+
+  - name: pool
+    type: nvarchar(255)
+    nullable: true
+    description: "Pool assignment for this run (stored as string, typically the POOLIDX value)."
+
+  - name: notes
+    type: nvarchar(max)
+    nullable: true
+    description: "Free-text notes about this production run."
+
+  - name: row_order
+    type: int
+    nullable: true
+    description: "Display ordering for UI. Controls run sequence within a day."
+
+  - name: run_status
+    type: nvarchar(255)
+    nullable: true
+    description: "Status of the run. Known values: 'pending', 'completed'."
+    values:
+      - "pending - run is scheduled but not yet started or finished"
+      - "completed - run has been processed"
+
+  - name: batch_id
+    type: nvarchar(50)
+    nullable: true
+    description: "Batch identifier for grouping related runs."
+
+  - name: time_started
+    type: datetime2
+    nullable: true
+    description: "Timestamp when the production run started."
+
+  - name: time_completed
+    type: datetime2
+    nullable: true
+    description: "Timestamp when the production run finished."
+
+sample_queries:
+  - description: "Production runs for today"
+    sql: |
+      SELECT id, GABLOCKIDX, bins, run_date, pick_date,
+             location, pool, run_status, time_started, time_completed
+      FROM dbo.processproductionruns
+      WHERE run_date = CAST(GETDATE() AS DATE)
+      ORDER BY row_order
+
+  - description: "Total bins processed by date"
+    sql: |
+      SELECT run_date, COUNT(*) as run_count, SUM(bins) as total_bins
+      FROM dbo.processproductionruns
+      WHERE run_status = 'completed'
+      GROUP BY run_date
+      ORDER BY run_date DESC
+
+  - description: "Pending runs with block details"
+    sql: |
+      SELECT p.run_date, p.GABLOCKIDX, p.bins, p.pool, p.location
+      FROM dbo.processproductionruns p
+      WHERE p.run_status = 'pending'
+      ORDER BY p.run_date, p.row_order

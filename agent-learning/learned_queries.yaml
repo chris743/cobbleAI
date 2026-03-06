@@ -482,7 +482,7 @@ entries:
   notes: Calculates bins needed to pick by comparing open order demand against available
     inventory, accounting for packout percentages and commodity-specific bin conversion
     rates (37.5 for mandarins, 23.2 for others)
-  verified: false
+  verified: true
 - timestamp: '2026-03-05T09:34:15.451444'
   question: What is the average NAVEL packout by size and grade?
   sql: "SELECT \n    SizeName,\n    Grade,\n    qnt as Cartons,\n    ROUND(pct_of_commodity\
