@@ -29,9 +29,40 @@ cd norman_frontend
 npm install
 npm run dev                          # Dev: http://localhost:5000 (proxies API to :8000)
 npm run build                        # Production build
+npm run lint                         # ESLint
+
+# Agent CLI (bypasses web/auth — useful for debugging tools directly)
+python agent_claude.py "How many bins of Fancy Navels are in inventory?"   # single question
+python agent_claude.py                                                      # interactive REPL
+
+# DB connectivity check
+python db_test.py
 ```
 
-There are no tests, linter, or CI pipeline configured.
+There are no automated tests or CI pipeline configured.
+
+## Required .env Variables
+
+```
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-sonnet-4-20250514   # optional override
+MAX_AGENT_TURNS=10                          # optional override
+DB_SERVER=RDGW-CF
+DB_DATABASE=DM03
+DB_USERNAME=
+DB_PASSWORD=
+DB_TRUSTED_CONNECTION=yes                  # set to 'no' for SQL auth
+QUERY_TIMEOUT=30
+MAX_ROWS=5000
+CONTEXT_PATH=./data-catalog
+LEARNING_PATH=./agent-learning
+CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
+MONGODB_URI=
+HARVEST_PLANNER_BASE_URL=
+HARVEST_PLANNER_USERNAME=
+HARVEST_PLANNER_PASSWORD=
+```
 
 ## Architecture
 
@@ -91,6 +122,27 @@ The agent operates across two databases:
 - **DM01** — Harvest planning data
 
 `QueryExecutor` accepts a `database` parameter to switch between them.
+
+## Living Documents
+
+Living documents are shared, daily-cached reports that all users see the same version of (e.g., production plans, pick plans). They are globally consistent — not per-user.
+
+**MongoDB collections:** `living_documents` (definitions) and `living_document_snapshots` (daily snapshots, keyed by `{ doc_id, date }`).
+
+**Module:** `living_docs.py` — CRUD for definitions and snapshots. Uses `_get_db()` from `chat_store.py`.
+
+**Backend routes (`web_app.py`):**
+- `GET /living-docs` — list all document definitions
+- `POST /living-docs` — create a new document (`name`, `prompt`, `description`)
+- `GET /living-docs/<id>` — get definition + latest snapshot (`snapshot` may be null)
+- `POST /living-docs/<id>/refresh` — stream-generate today's snapshot via SSE (same protocol as `/chat/stream`)
+- `GET /living-docs/<id>/history` — list past snapshot dates (no content)
+
+**Agent tools (`agent_tools.py`):** `list_living_documents`, `get_living_document(name)`, `create_living_document(name, description, prompt)`. The agent creates docs when users type `/living-doc-add`.
+
+**Snapshot generation:** Runs `run_agent_turn_streaming()` with the document's stored prompt. One snapshot per day per document (upsert by `doc_id + date`). Snapshots are never scoped to a user.
+
+**Frontend:** Sidebar shows a "Living Documents" section above conversations. Clicking a doc loads it into a read-only view mode. The topbar shows a ↻ refresh button and the snapshot date. The input area is replaced by a "Return to chat" footer. After every agent turn, the sidebar living-docs list is refreshed to pick up any newly created docs.
 
 ## Key Business Concepts
 

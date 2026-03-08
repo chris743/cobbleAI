@@ -1,4 +1,15 @@
-export default function Sidebar({ open, conversations, activeId, onSelect, onNew, user, onSignOut }) {
+export default function Sidebar({
+  open,
+  conversations,
+  activeId,
+  onSelect,
+  onNew,
+  user,
+  onSignOut,
+  livingDocs,
+  activeLivingDocId,
+  onSelectLivingDoc,
+}) {
   return (
     <aside className={`sidebar ${open ? '' : 'collapsed'}`}>
       <div className="sidebar-header">
@@ -14,16 +25,38 @@ export default function Sidebar({ open, conversations, activeId, onSelect, onNew
         New Conversation
       </button>
 
-      <div className="conversation-list">
-        {conversations.map((c) => (
-          <div
-            key={c.id}
-            className={`convo-item ${c.id === activeId ? 'active' : ''}`}
-            onClick={() => onSelect(c.id)}
-          >
-            {c.title}
-          </div>
-        ))}
+      {livingDocs && livingDocs.length > 0 && (
+        <div className="sidebar-section">
+          <div className="sidebar-section-label">Living Documents</div>
+          {livingDocs.map((doc) => (
+            <div
+              key={doc.id}
+              className={`convo-item living-doc-item ${doc.id === activeLivingDocId ? 'active' : ''}`}
+              onClick={() => onSelectLivingDoc(doc)}
+              title={doc.description || doc.name}
+            >
+              <span className="living-doc-icon">&#x1F4CB;</span>
+              {doc.name}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="sidebar-section">
+        {(livingDocs && livingDocs.length > 0) && (
+          <div className="sidebar-section-label">Conversations</div>
+        )}
+        <div className="conversation-list">
+          {conversations.map((c) => (
+            <div
+              key={c.id}
+              className={`convo-item ${c.id === activeId ? 'active' : ''}`}
+              onClick={() => onSelect(c.id)}
+            >
+              {c.title}
+            </div>
+          ))}
+        </div>
       </div>
 
       {user && (

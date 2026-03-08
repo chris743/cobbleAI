@@ -7,10 +7,11 @@ export default defineConfig({
     port: 5000,   
     allowedHosts:['ai.cobblestonecloud.com'],
     proxy: {
-      '/chat': { target: 'http://localhost:8000', timeout: 3000000, changeOrigin: true },
-      '/new': 'http://localhost:8000',
-      '/conversations': 'http://localhost:8000',
-      '/download': 'http://localhost:8000',
+      '/chat': { target: 'http://127.0.0.1:8000', timeout: 3000000, changeOrigin: true },
+      '/new': 'http://127.0.0.1:8000',
+      '/conversations': 'http://127.0.0.1:8000',
+      '/download': 'http://127.0.0.1:8000',
+      '/living-docs': 'http://127.0.0.1:8000',
     }
   }
 })

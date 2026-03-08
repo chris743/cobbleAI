@@ -526,6 +526,63 @@ body {
     margin-right: auto;
 }
 
+/* ── Living Documents ── */
+.sidebar-section { display: flex; flex-direction: column; }
+
+.sidebar-section-label {
+    padding: 8px 20px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-sidebar);
+    opacity: 0.6;
+}
+
+.living-doc-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.living-doc-icon { font-size: 13px; flex-shrink: 0; }
+
+.living-doc-date {
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    white-space: nowrap;
+}
+
+.living-doc-footer {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 12px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+}
+
+.living-doc-back-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.living-doc-back-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.topbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ── Auth ── */
 .auth-screen {
     flex: 1;

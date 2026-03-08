@@ -13,6 +13,7 @@ Usage:
 import os
 import uuid
 import logging
+from datetime import date as _date
 from dotenv import load_dotenv
 
 # Load .env before importing agent (which initializes the Anthropic client at import time)
@@ -23,6 +24,7 @@ from flask_cors import CORS
 from agent_claude import run_agent_turn, run_agent_turn_streaming
 from auth import require_auth
 import chat_store
+import living_docs as ld
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
@@ -152,6 +154,95 @@ def get_conversation(conversation_id):
         abort(404)
     return jsonify(result)
 
+
+
+# ── Living Documents ──────────────────────────────────────────────────────────
+
+@app.route("/living-docs", methods=["GET"])
+@require_auth
+def list_living_docs():
+    return jsonify(ld.list_docs())
+
+
+@app.route("/living-docs", methods=["POST"])
+@require_auth
+def create_living_doc():
+    data = request.get_json()
+    name = data.get("name", "").strip()
+    prompt = data.get("prompt", "").strip()
+    description = data.get("description", "").strip()
+    if not name or not prompt:
+        return jsonify({"error": "name and prompt are required"}), 400
+    doc = ld.create_doc(name, description, prompt,
+                        request.clerk_user_id, request.clerk_username)
+    return jsonify(doc), 201
+
+
+@app.route("/living-docs/<doc_id>", methods=["GET"])
+@require_auth
+def get_living_doc(doc_id):
+    """Return the document definition and its latest snapshot (may be None)."""
+    doc = ld.get_doc(doc_id)
+    if not doc:
+        abort(404)
+    snapshot = ld.get_latest_snapshot(doc["id"])
+    return jsonify({
+        "id": doc["id"],
+        "name": doc["name"],
+        "description": doc.get("description", ""),
+        "prompt": doc["prompt"],
+        "snapshot": snapshot,
+    })
+
+
+@app.route("/living-docs/<doc_id>/refresh", methods=["POST"])
+@require_auth
+def refresh_living_doc(doc_id):
+    """Stream-generate today's snapshot using the document's prompt."""
+    doc = ld.get_doc(doc_id)
+    if not doc:
+        abort(404)
+
+    def generate():
+        import json as _json
+        messages = [{"role": "user", "content": doc["prompt"]}]
+        full_text = []
+
+        try:
+            for event_type, payload in run_agent_turn_streaming(messages, log_fn=app.logger.info):
+                if event_type == "token":
+                    full_text.append(payload)
+                    yield f"data: {_json.dumps({'type': 'token', 'text': payload})}\n\n"
+                elif event_type == "tool":
+                    yield f"data: {_json.dumps({'type': 'tool', 'name': payload})}\n\n"
+        except Exception as e:
+            app.logger.exception("Living doc refresh error")
+            yield f"data: {_json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            return
+
+        content = "".join(full_text)
+        if content:
+            ld.save_snapshot(doc["id"], content)
+
+        today = _date.today().isoformat()
+        yield f"data: {_json.dumps({'type': 'done', 'date': today})}\n\n"
+
+    return Response(generate(), mimetype="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    })
+
+
+@app.route("/living-docs/<doc_id>/history", methods=["GET"])
+@require_auth
+def living_doc_history(doc_id):
+    doc = ld.get_doc(doc_id)
+    if not doc:
+        abort(404)
+    return jsonify(ld.list_snapshot_history(doc["id"]))
+
+
+# ── File downloads ────────────────────────────────────────────────────────────
 
 EXPORTS_DIR = os.path.join(os.path.dirname(__file__), "exports")
 
