@@ -16,7 +16,7 @@ export default function ChatLayout() {
   const { signOut } = useClerk()
   const { user } = useUser()
 
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 768)
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme')
     return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -41,6 +41,9 @@ export default function ChatLayout() {
 
   const chatRef = useRef(null)
   const inputRef = useRef(null)
+
+  const isMobile = () => window.innerWidth <= 768
+  const closeSidebarOnMobile = () => { if (isMobile()) setSidebarOpen(false) }
 
   // Theme
   useEffect(() => {
@@ -104,6 +107,7 @@ export default function ChatLayout() {
 
   // Load a conversation from sidebar
   const loadConversation = async (id) => {
+    closeSidebarOnMobile()
     setLivingDocView(null)
     try {
       const data = await apiGet(`/conversations/${id}`)
@@ -120,6 +124,7 @@ export default function ChatLayout() {
 
   // Open a living document
   const openLivingDoc = async (doc) => {
+    closeSidebarOnMobile()
     setLivingDocView({ id: doc.id, name: doc.name, description: doc.description, snapshot: null })
     setConversationId(null)
     setMessages([])
@@ -238,6 +243,7 @@ export default function ChatLayout() {
 
   // New conversation
   const newConversation = () => {
+    closeSidebarOnMobile()
     setLivingDocView(null)
     setConversationId(null)
     setMessages([])
@@ -343,6 +349,11 @@ export default function ChatLayout() {
         customerSpecs={customerSpecs}
         onDeleteSpec={deleteCustomerSpec}
       />
+
+      {/* Mobile backdrop */}
+      {sidebarOpen && (
+        <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+      )}
 
       <div className="main">
         {/* Topbar */}
