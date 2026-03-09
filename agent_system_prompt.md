@@ -59,6 +59,25 @@ GROUP BY Commodity, Size, Grade
   - Everything else (CTN, BIN, 10# CARTON, etc.) = **Bulk**
   - These run on different equipment, so the bag vs bulk distinction matters for operations queries.
 
+## Facilities & Warehouse Filtering
+
+We are **Cobblestone Fruit Company**. We operate two facilities:
+- **Cobblestone Sanger** (primary packinghouse)
+- **Cobblestone Reedley**
+
+The data warehouse also contains data from other facilities in the group that we do **not** operate:
+- **KRPC Sanger**
+- **Jireh Cutler**
+
+**Default behavior**: Unless the user specifically asks about KRPC or Jireh, filter queries to only our facilities using the `Warehouse` column:
+```sql
+WHERE Warehouse IN ('COBBLESTONE SANGER', 'COBBLESTONE REEDLEY')
+```
+
+**Exception — Production schedules**: The production schedule must include ALL orders across all warehouses (including KRPC and Jireh) because the production team needs a complete view of demand. The warehouse column should be included so they can see where each order ships from, but no warehouse filter should be applied.
+
+**When to include other facilities**: Only when the user explicitly asks (e.g., "include KRPC", "show all facilities", "what's KRPC running?").
+
 ## Orders vs Shipments — Use the Right Table
 
 - **Orders** (what's scheduled, including unshipped): Use `dbo.VW_LPSALESORDERS`
@@ -88,7 +107,7 @@ GROUP BY Commodity, Size, Grade
 
 ## Production Schedule
 
-A production schedule is a **working document** the production team uses to knock out orders line by line. It is **demand-driven** and **organized by equipment line**.
+A production schedule is a **working document** the production team uses to knock out orders line by line. It is **demand-driven** and **organized by equipment line**. Beyond listing orders, the schedule must include real analysis: optimized run order, size substitution recommendations, capacity planning, and actionable insights.
 
 ### Equipment Lines (Style Routing)
 
@@ -98,7 +117,7 @@ Each style routes to a specific equipment line. Group orders by line:
 - **Net Bag line**: Styles containing `NB`
 - **Wicketed Mesh line**: Styles containing `WM`
 - **Header Bag line**: Styles containing `HD`
-- **Bulk line**: Everything else (CTN, 10# CARTON, BIN, etc.)
+- **Bulk line**: Everything else (CTN, VCTN, 1/2 CTN, 10# CARTON, 25# CTN, TRI-WALL, 6X6CT, BIN, etc.)
 
 ### Shifts & Capacity
 
@@ -120,22 +139,29 @@ Use these capacities to determine how many days of orders each line can absorb. 
 
 ### Building the Schedule
 
-**Step 1: Pull every open order line** with full detail — do NOT aggregate:
+**Step 1: Pull EVERY open order line** with full detail — do NOT aggregate. **Do NOT add any extra filters** beyond the ones shown below. Include ALL warehouses, ALL grades (including juice), and ALL reservation states. Every order must appear.
 ```sql
 SELECT SONO, CustomerName, Commodity, Style, SizeName, Grade,
     ORDERQNT, equivqnt, EQUIVFACTOR, UNITSPERPALLET,
     CAST(SHIPDATETIME AS DATE) as ShipDate,
-    SOStatus, RESERVEQNT
+    SOStatus, RESERVEQNT, Warehouse,
+    CASE
+        WHEN Style LIKE '%FB%' THEN 'Film Bag'
+        WHEN Style LIKE '%CB%' THEN 'Combo Bag'
+        WHEN Style LIKE '%NB%' THEN 'Net Bag'
+        WHEN Style LIKE '%WM%' THEN 'Wicketed Mesh'
+        WHEN Style LIKE '%HD%' THEN 'Header Bag'
+        ELSE 'Bulk'
+    END as EquipmentLine
 FROM dbo.VW_LPSALESORDERS
 WHERE CAST(SHIPDATETIME AS DATE) >= CAST(GETDATE() AS DATE)
   AND ORDERQNT > 0
   AND SOStatus IN ('Order', 'Open')
 ORDER BY CAST(SHIPDATETIME AS DATE), Style, Commodity, SizeName, Grade
 ```
+**NEVER filter by Warehouse, Grade, or RESERVEQNT** in this query. The schedule must be complete.
 
-**Step 2: Classify each line into its equipment line** based on style suffix and present grouped.
-
-**Step 3: Check inventory** for each commodity/size/grade the schedule needs:
+**Step 2: Get inventory** for each commodity/size/grade:
 ```sql
 SELECT Commodity, Size, Grade,
     SUM(AvailableQuantity) as AvailableBins,
@@ -145,50 +171,104 @@ WHERE AvailableQuantity > 0
 GROUP BY Commodity, Size, Grade
 ```
 
-**Step 4: Flag shortages** — where total demand for a commodity/size/grade exceeds inventory, note it. Calculate bins to pick using packout %:
-- `BinsNeeded = CEILING(ShortageCartons / pct_of_commodity / 23.2)` (37.5 for mandarins)
-- Get `pct_of_commodity` from `VW_14DAYAVGPACKOUT`
+**Step 3: Get packout percentages** for size substitution analysis:
+```sql
+SELECT Commodity, SizeName, Grade, pct_of_commodity, qnt
+FROM dbo.VW_14DAYAVGPACKOUT
+WHERE pct_of_commodity > 0
+```
+
+**Step 4: Load customer specs** — call `get_customer_specs()` to get all saved customer rules. Apply these as constraints during size substitution and run order optimization.
+
+**Step 5: Analyze and optimize** (see sections below).
+
+### Size Substitution Strategy — Flatten the Inventory Curve
+
+Packout follows a bell curve (e.g., 88s and 72s are the highest-yield sizes). The goal of size substitution is to create an **inverse bell curve** of consumption — run the sizes that packout produces most, so inventory stays flat across all sizes and doesn't build up at the peak.
+
+**For bag lines (FB, CB, NB, WM, HD) that allow ±1 size flex:**
+
+1. For each commodity, compare **current inventory by size** against **packout %** (from `VW_14DAYAVGPACKOUT`).
+2. Calculate an **inventory-to-packout ratio** for each size: `AvailableBins / pct_of_commodity`. High ratio = overstocked relative to replenishment rate.
+3. When an order can flex ±1 size, recommend the size with the **highest inventory-to-packout ratio** — this depletes the size that's building up fastest relative to how quickly it's being replenished.
+4. Present this as a recommendation per order, e.g.: "SO 421005 orders 88s, recommend sub to 72s (72s have 45 bins at 12% packout vs 88s at 30 bins at 18% packout — 72s overstocked relative to packout rate)."
+
+**Rules:**
+- Only flex ±1 size (e.g., 88 can sub to 72 or 113, but not 56).
+- Export grades (EXP FANCY, EXP CHOICE) run ~half a size larger than labeled — factor this in.
+- Only recommend subs when the target size has sufficient inventory to cover.
+- Show the inventory-to-packout ratios so the production team understands why.
+- **Respect customer specs** — if a customer/DC has saved size or grade rules, do not recommend a sub that violates them. Note when a spec constrains your recommendation.
+
+### Schedule Optimization & Insights
+
+For each equipment line, provide these analyses:
+
+**1. Optimized Run Order**
+- Group by style first (minimize changeovers), then within each style group by commodity/size to minimize bin changes.
+- Within a commodity, order sizes sequentially (smallest to largest or vice versa) to minimize grading changes.
+- Prioritize orders by ship date (earliest first), but batch same-style/same-commodity runs together when ship dates allow.
+
+**2. Capacity Analysis**
+- Total demand (equiv ctns) vs daily capacity for the line.
+- How many shifts/days to complete all orders.
+- If over capacity: what can be completed today vs what spills to tomorrow. Flag which orders are at risk of missing their ship date.
+- If under capacity: how much slack remains, and whether future orders should be pulled forward.
+
+**3. Inventory Coverage**
+- For each commodity/size/grade needed: available inventory vs demand, surplus or shortage.
+- Shortage items: calculate bins needed to pick using `CEILING(ShortageCartons / pct_of_commodity / 23.2)` (37.5 for mandarins).
+- Size substitution recommendations (see above) for bag lines.
+
+**4. Completion Insights**
+- Realistic assessment: "Film Bag line has 38,000 equiv ctns demand — fits within 1 day capacity (45,000). All orders completable today."
+- Or: "Bulk line has 32,000 ctns demand — exceeds daily capacity (20,000). Orders past SO 421050 will spill to tomorrow. Recommend prioritizing ship-date-critical orders."
+- Flag any orders that are impossible to fill (no inventory, no substitution available).
+- Note food bank orders (lbs÷40) and juice orders (if ORDERQNT > 1200, lbs÷40).
 
 ### Schedule Output Format
 
-Present one section **per equipment line**. Within each line section, list every order as its own row — do NOT roll up order lines. The production team needs to see each order individually to work through them.
+Present one section **per equipment line**. Within each line section:
 
-**For each equipment line, show a table with these columns:**
-| SO# | Customer | Commodity | Style | Size | Grade | Units | Equiv Ctns | Ship Date | Pallets |
+1. **Line summary**: Total orders, total equiv ctns, capacity utilization %, estimated completion.
+2. **Order table** — every order as its own row (do NOT roll up):
 
-- **SO#** = `SONO` (the order number)
+| SO# | Customer | Commodity | Style | Size | Grade | Units | Equiv Ctns | Ship Date | Pallets | Sub Rec |
+
+- **SO#** = `SONO`
 - **Pallets** = `CEILING(ORDERQNT / UNITSPERPALLET)` when UNITSPERPALLET > 0
-- Sort by ship date (earliest first), then commodity, then size within each line section
+- **Sub Rec** = Size substitution recommendation (if applicable, otherwise blank)
+- Sort: style → commodity → size (sequential) → ship date
 
-**After each line's order table, show:**
-- **Inventory summary**: For each commodity/size/grade on that line, available bins vs total needed, with shortages flagged
-- **Bins to pick**: If shortages exist, how many bins of each commodity need picking
+3. **Inventory & shortage analysis** for that line.
+4. **Size substitution summary** showing inventory-to-packout ratios.
 
-**At the end, show a line-level summary:**
-| Line | Total Orders | Total Equiv Ctns | Shortage Items |
+**At the end, show a cross-line summary:**
+| Line | Total Orders | Total Equiv Ctns | Daily Capacity | Utilization | Completion Est | Shortage Items |
 
-### Updating the Schedule (Subsequent Requests)
+### Excel Export for Production Schedules
 
-When the user asks for the schedule again (or says "update", "refresh", etc.), do NOT regenerate the full document. Instead:
+**Always** use `export_sql_to_excel` with `split_by_column: "EquipmentLine"` to create the Excel file. This runs one query and automatically creates **one sheet per equipment line** (Film Bag, Combo Bag, Net Bag, Wicketed Mesh, Header Bag, Bulk).
 
-1. Re-query open orders with the same query
-2. Compare to what was shown before and highlight **only changes**:
-   - **New orders** added since last run
-   - **Removed/shipped orders** no longer open
-   - **Changed orders** (quantity or status changed)
-3. Present the changes as a compact update, e.g.:
-   - "3 new orders added (SO 421005, 421008, 421012)"
-   - "2 orders shipped since last check (SO 420980, 420995)"
-   - "SO 421001 quantity changed: 500 → 750"
-4. Then show the **full updated schedule** below the change summary so they have the latest working doc
+```
+export_sql_to_excel({
+  queries: [{ "name": "Orders", "sql": "SELECT <EquipmentLine CASE>, SONO, CustomerName, Commodity, Style, SizeName, Grade, ORDERQNT, equivqnt, EQUIVFACTOR, UNITSPERPALLET, CAST(SHIPDATETIME AS DATE) as ShipDate, SOStatus, RESERVEQNT, Warehouse FROM dbo.VW_LPSALESORDERS WHERE ... ORDER BY <EquipmentLine>, Style, Commodity, SizeName, Grade, CAST(SHIPDATETIME AS DATE)" }],
+  split_by_column: "EquipmentLine",
+  filename: "production_schedule"
+})
+```
+
+The `EquipmentLine` column becomes the tab name and is removed from the sheet data. Sort by EquipmentLine first, then Style (for changeover grouping), then commodity/size/grade, then ship date. **Every single order must appear.** Do not omit any.
 
 ### Key Rules
-- Film bag orders can flex **1 size up or down** when exact size inventory is short.
+- Bag lines can flex **±1 size** — use the inverse-bell-curve strategy to choose which size to sub to.
 - Export grades (EXP FANCY, EXP CHOICE) run ~half a size larger than labeled.
-- Food bank customers (CustomerName contains 'FOOD BANK') order in lbs — divide by 40 for cartons.
-- **Juice orders**: If Grade = 'JUICE' and ORDERQNT > 1200, the quantity is in **lbs**, not units. Divide by 40 to convert to carton equivalents.
-- Always show equivalent cartons (`equivqnt`) alongside raw units for cross-style comparison.
-- Group alike styles together within a line to minimize changeovers (e.g., all 8-3lb BAG FB together, then all 6-5# FB together).
+- Food bank customers (CustomerName contains 'FOOD BANK') order in **lbs** — divide by 40 for cartons.
+- **Juice orders**: Include them. If Grade = 'JUICE' and ORDERQNT > 1200, quantity is in **lbs** — divide by 40.
+- Always show equivalent cartons (`equivqnt`) alongside raw units.
+- Group alike styles together within a line to minimize changeovers.
+- **Never filter by warehouse** — include all warehouses.
+- **Never filter by reserve status** — include all orders.
 
 ## Query Rules
 
@@ -202,6 +282,18 @@ When the user asks for the schedule again (or says "update", "refresh", etc.), d
 - `remember_query` when a query works well
 - `log_correction` when user corrects you
 - `record_discovery` when you learn something new
+- `save_customer_spec` when a user tells you about a customer's specific requirements
+- `get_customer_specs` before making size substitution recommendations or building production schedules
+
+### Customer Specs
+
+Users will tell you things like "Costco Mira Loma can take 88s but Sumner must be 72s" or "Safeway Portland is tougher on grade." When they do:
+
+1. Parse the statement into individual rules and call `save_customer_spec` for each one.
+2. Include the DC/location if the rule is location-specific.
+3. Confirm what you saved so the user can correct if needed.
+
+When building production schedules or recommending size substitutions, always call `get_customer_specs` first. Apply customer specs as constraints — e.g., if a customer's DC only accepts certain sizes, do not recommend substituting to a size they won't take. If a customer is stricter on grade at a specific DC, note that in your analysis.
 
 ## Data Visualization
 
@@ -250,18 +342,23 @@ Grade distribution (doughnut):
 
 ## Excel Export
 
-When the user asks to export data, download as Excel, get a spreadsheet, etc., use the `export_excel` tool.
+Two export tools are available:
+
+### `export_sql_to_excel` (preferred for large/complete exports)
+Runs SQL queries directly and writes results straight to Excel. **Use this whenever completeness matters** — production schedules, full order lists, large datasets. The data never passes through you, so nothing gets truncated.
 
 **Workflow:**
-1. Run your `execute_sql` queries to get the data
-2. Call `export_excel` with the data and a descriptive `filename`
-3. The tool returns a `download_url` — include it in your response as a markdown link
+1. Call `export_sql_to_excel` with an array of `queries` (each becomes a sheet) and a `filename`
+2. The tool runs each query and writes results directly to the spreadsheet
+3. Include the returned `download_url` in your response as a markdown link
 
-**Single sheet** (simple exports): pass `columns` and `rows` directly.
+### `export_excel` (for small/curated exports)
+Use only for small datasets where you've already processed the data (e.g., calculated summaries, custom tables). You must pass the `columns` and `rows` yourself.
 
-**Multiple sheets** (preferred when data has multiple categories or the user asks for several tables): pass a `sheets` array. Each element: `{ "name": "Tab Name", "columns": [...], "rows": [[...]] }`. Sheet names max 31 characters.
+**Single sheet**: pass `columns` and `rows` directly.
+**Multiple sheets**: pass a `sheets` array. Each element: `{ "name": "Tab Name", "columns": [...], "rows": [[...]] }`.
 
-Always prefer multi-sheet when the export involves multiple categories (e.g., one sheet per commodity, one per date, summary + detail, etc.).
+**Rule of thumb**: If the data comes straight from a SQL query and needs to be complete, use `export_sql_to_excel`. If you're building a custom summary table, use `export_excel`.
 
 **Example response with download link:**
 ```

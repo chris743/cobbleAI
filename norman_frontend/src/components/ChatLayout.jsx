@@ -36,6 +36,9 @@ export default function ChatLayout() {
   const [editingDoc, setEditingDoc] = useState(null)
   // editingDoc shape: { id, name, description, prompt } | null
 
+  // Customer specs state
+  const [customerSpecs, setCustomerSpecs] = useState([])
+
   const chatRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -65,10 +68,32 @@ export default function ChatLayout() {
     }
   }, [])
 
+  // Load customer specs
+  const loadCustomerSpecs = useCallback(async () => {
+    try {
+      const data = await apiGet('/customer-specs')
+      setCustomerSpecs(data)
+    } catch (e) {
+      console.error('Failed to load customer specs:', e)
+    }
+  }, [])
+
+  // Delete a customer spec by ID
+  const deleteCustomerSpec = async (specId) => {
+    if (!window.confirm('Remove this customer spec?')) return
+    try {
+      await apiDelete(`/customer-specs/${specId}`)
+      loadCustomerSpecs()
+    } catch (e) {
+      console.error('Failed to delete customer spec:', e)
+    }
+  }
+
   useEffect(() => {
     loadConversations()
     loadLivingDocs()
-  }, [loadConversations, loadLivingDocs])
+    loadCustomerSpecs()
+  }, [loadConversations, loadLivingDocs, loadCustomerSpecs])
 
   // Scroll to bottom
   useEffect(() => {
@@ -268,6 +293,8 @@ export default function ChatLayout() {
       loadConversations()
       // Reload living docs in case the agent created one via /living-doc-add
       loadLivingDocs()
+      // Reload customer specs in case the agent saved new ones
+      loadCustomerSpecs()
     } catch (err) {
       setMessages((prev) => [...prev, { role: 'error', content: err.message }])
     }
@@ -313,6 +340,8 @@ export default function ChatLayout() {
         livingDocs={livingDocs}
         activeLivingDocId={livingDocView?.id ?? null}
         onSelectLivingDoc={openLivingDoc}
+        customerSpecs={customerSpecs}
+        onDeleteSpec={deleteCustomerSpec}
       />
 
       <div className="main">

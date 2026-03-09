@@ -25,7 +25,7 @@ client = Anthropic()  # Uses ANTHROPIC_API_KEY from .env
 toolkit = AgentToolkit()
 
 # Config from .env
-MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 MAX_TURNS = int(os.getenv("MAX_AGENT_TURNS", "10"))
 
 # Load system prompt

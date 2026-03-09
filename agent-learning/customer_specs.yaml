@@ -1,0 +1,25 @@
+entries:
+- timestamp: '2026-03-09T13:58:23.909140'
+  customer: HEB
+  dc: null
+  spec_type: size
+  rule: 'Mandarin 5# bags: accepted sizes are 032 through 024 (i.e., 024, 025, 026,
+    027, 028, 029, 030, 031, 032)'
+- timestamp: '2026-03-09T13:58:23.917337'
+  customer: HEB
+  dc: null
+  spec_type: size
+  rule: 'Mandarin 3# bags: accepted sizes are 032 through 024 (i.e., 024, 025, 026,
+    027, 028, 029, 030, 031, 032)'
+- timestamp: '2026-03-09T13:59:15.911395'
+  customer: Sam's Club
+  dc: null
+  spec_type: size
+  rule: 'Navel 35# net bags: accepted sizes are 072 through 138 (i.e., 072, 088, 113,
+    138)'
+- timestamp: '2026-03-09T13:59:15.919409'
+  customer: Sam's Club
+  dc: null
+  spec_type: size
+  rule: 'Blood Orange 35# net bags: accepted sizes are 072 through 138 (i.e., 072,
+    088, 113, 138)'

@@ -38,6 +38,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 load_dotenv()
 
 import living_docs as _living_docs
+import customer_specs as _customer_specs
 
 # =============================================================================
 # CONFIGURATION (from .env)
@@ -126,8 +127,10 @@ class QueryExecutor:
             return val.hex()
         return val
     
-    def execute(self, sql: str, max_rows: Optional[int] = None, database: str = None) -> dict:
-        max_rows = min(max_rows or self.max_rows, self.max_rows)
+    def execute(self, sql: str, max_rows: Optional[int] = None, database: str = None,
+                _internal_limit: int = None) -> dict:
+        effective_max = _internal_limit or self.max_rows
+        max_rows = min(max_rows or effective_max, effective_max)
 
         is_valid, error = self._validate_query(sql)
         if not is_valid:
@@ -307,7 +310,7 @@ class LearningManager:
         self.queries_file = self.learning_path / "learned_queries.yaml"
         self.corrections_file = self.learning_path / "corrections.yaml"
         self.discoveries_file = self.learning_path / "discoveries.yaml"
-        
+
         # Initialize files if they don't exist
         for f in [self.queries_file, self.corrections_file, self.discoveries_file]:
             if not f.exists():
@@ -397,11 +400,12 @@ class LearningManager:
         """Get recorded discoveries, optionally by category."""
         data = self._load_file(self.discoveries_file)
         entries = data.get("entries", [])
-        
+
         if category:
             entries = [e for e in entries if e.get("category") == category]
-        
+
         return entries
+
 
 
 # =============================================================================
@@ -484,6 +488,119 @@ class ExcelExporter:
             "row_count": total_rows,
             "sheet_count": len(sheet_list),
             "message": f"Excel file ready: {xlsx_name} ({len(sheet_list)} sheet{'s' if len(sheet_list) != 1 else ''})"
+        }
+
+    def export_from_queries(self, queries: list[dict], filename: str = "",
+                            split_by_column: str = None) -> dict:
+        """Run SQL queries directly and export results to a multi-sheet Excel file.
+        Each query dict: { "name": "Sheet Name", "sql": "SELECT ...", "database": "DM03" (optional) }
+
+        If split_by_column is set, only the FIRST query is used. Its results are split
+        into separate sheets based on distinct values of that column. The column is
+        removed from the sheet data (it becomes the tab name). Great for splitting
+        orders by Style, EquipmentLine, Commodity, etc.
+        """
+        if not queries:
+            return {"success": False, "error": "No queries provided"}
+
+        executor = QueryExecutor()
+        file_id = str(uuid.uuid4())[:8]
+        if not filename:
+            filename = f"export_{file_id}"
+        safe_name = "".join(c for c in filename if c.isalnum() or c in "_- ").strip()
+        if not safe_name:
+            safe_name = f"export_{file_id}"
+        xlsx_name = f"{safe_name}_{file_id}.xlsx"
+
+        wb = Workbook()
+        wb.remove(wb.active)
+
+        total_rows = 0
+        sheet_results = []
+
+        if split_by_column:
+            # Split mode: run first query, split results by column value
+            q = queries[0]
+            sql = q.get("sql", "")
+            database = q.get("database")
+            if not sql:
+                return {"success": False, "error": "No SQL provided"}
+
+            result = executor.execute(sql, database=database, _internal_limit=50000)
+            if not result.get("success"):
+                return {"success": False, "error": result.get("error", "Query failed")}
+
+            columns = result["columns"]
+            rows = result["rows"]
+            if not rows:
+                return {"success": False, "error": "Query returned no data"}
+
+            # Find the split column index
+            split_col = split_by_column.strip()
+            try:
+                split_idx = next(i for i, c in enumerate(columns) if c.lower() == split_col.lower())
+            except StopIteration:
+                return {"success": False, "error": f"Column '{split_by_column}' not found. Available: {columns}"}
+
+            # Remove split column from output columns
+            out_columns = [c for i, c in enumerate(columns) if i != split_idx]
+
+            # Group rows by split column value
+            from collections import OrderedDict
+            groups = OrderedDict()
+            for row in rows:
+                key = str(row[split_idx] or "Other")
+                if key not in groups:
+                    groups[key] = []
+                groups[key].append([v for i, v in enumerate(row) if i != split_idx])
+
+            for group_name, group_rows in groups.items():
+                sheet_name = str(group_name)[:31]
+                ws = wb.create_sheet(title=sheet_name)
+                self._write_sheet(ws, out_columns, group_rows)
+                total_rows += len(group_rows)
+                sheet_results.append({"sheet": sheet_name, "rows": len(group_rows)})
+        else:
+            # Standard mode: one query per sheet
+            for q in queries:
+                sheet_name = str(q.get("name", "Sheet"))[:31]
+                sql = q.get("sql", "")
+                database = q.get("database")
+
+                if not sql:
+                    sheet_results.append({"sheet": sheet_name, "error": "No SQL provided"})
+                    continue
+
+                result = executor.execute(sql, database=database, _internal_limit=50000)
+                if not result.get("success"):
+                    sheet_results.append({"sheet": sheet_name, "error": result.get("error", "Query failed")})
+                    continue
+
+                columns = result["columns"]
+                rows = result["rows"]
+                if not rows:
+                    sheet_results.append({"sheet": sheet_name, "rows": 0, "note": "No data returned"})
+                    continue
+
+                ws = wb.create_sheet(title=sheet_name)
+                self._write_sheet(ws, columns, rows)
+                total_rows += len(rows)
+                sheet_results.append({"sheet": sheet_name, "rows": len(rows)})
+
+        if total_rows == 0:
+            return {"success": False, "error": "All queries returned no data", "details": sheet_results}
+
+        filepath = self.export_path / xlsx_name
+        wb.save(filepath)
+
+        return {
+            "success": True,
+            "file_id": xlsx_name,
+            "download_url": f"/download/{xlsx_name}",
+            "row_count": total_rows,
+            "sheet_count": len([s for s in sheet_results if s.get("rows", 0) > 0]),
+            "sheets": sheet_results,
+            "message": f"Excel file ready: {xlsx_name} ({total_rows} total rows)"
         }
 
 
@@ -910,6 +1027,46 @@ class AgentToolkit:
                     }
                 }
             },
+            {
+                "name": "save_customer_spec",
+                "description": "Save a customer-specific specification or preference. Use when the user tells you about a customer's size requirements, grade tolerances, packaging preferences, DC-specific rules, or any other customer-specific rule. Examples: 'Costco Mira Loma can take 88s', 'Safeway Portland is tougher on grade'.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "customer": {
+                            "type": "string",
+                            "description": "Customer name (e.g., 'Costco', 'Safeway', 'Walmart')"
+                        },
+                        "spec_type": {
+                            "type": "string",
+                            "enum": ["size", "grade", "packaging", "label", "pallet", "general"],
+                            "description": "Type of specification"
+                        },
+                        "rule": {
+                            "type": "string",
+                            "description": "The specific rule or preference in plain language"
+                        },
+                        "dc": {
+                            "type": "string",
+                            "description": "Distribution center or location if the rule is DC-specific (e.g., 'Mira Loma', 'Sumner', 'Portland')"
+                        }
+                    },
+                    "required": ["customer", "spec_type", "rule"]
+                }
+            },
+            {
+                "name": "get_customer_specs",
+                "description": "Retrieve saved customer specifications and preferences. Check this when building production schedules, making size substitution recommendations, or answering questions about what a customer accepts.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "customer": {
+                            "type": "string",
+                            "description": "Optional customer name to filter by"
+                        }
+                    }
+                }
+            },
 
             # === EXPORT TOOLS ===
             {
@@ -946,6 +1103,38 @@ class AgentToolkit:
                             "description": "Descriptive filename (without extension), e.g. 'navel_inventory_march'"
                         }
                     }
+                }
+            },
+
+            {
+                "name": "export_sql_to_excel",
+                "description": "Run SQL queries and export results DIRECTLY to Excel — data goes straight from database to spreadsheet. Use this instead of export_excel for complete exports. Supports two modes: (1) Multiple queries, each becoming a sheet. (2) Single query with split_by_column to auto-split results into one sheet per distinct value of that column (e.g., split by Style to get one tab per style). Use split_by_column for production schedules.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "queries": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Sheet/tab name (max 31 chars). Ignored when split_by_column is used."},
+                                    "sql": {"type": "string", "description": "SELECT query to run"},
+                                    "database": {"type": "string", "description": "Database to query (DM03 or DM01). Defaults to DM03."}
+                                },
+                                "required": ["name", "sql"]
+                            },
+                            "description": "Array of queries. When split_by_column is set, only the first query is used."
+                        },
+                        "split_by_column": {
+                            "type": "string",
+                            "description": "Column name to split results by. Each distinct value becomes a separate sheet tab. The column is removed from the sheet data. E.g., 'Style' splits orders into one sheet per style. For production schedules, include a Style column in the query and set this to 'Style'."
+                        },
+                        "filename": {
+                            "type": "string",
+                            "description": "Descriptive filename (without extension)"
+                        }
+                    },
+                    "required": ["queries"]
                 }
             },
 
@@ -1150,10 +1339,18 @@ class AgentToolkit:
             ),
             "get_learned_queries": lambda p: self.learning.get_learned_queries(p.get("search")),
             "get_discoveries": lambda p: self.learning.get_discoveries(p.get("category")),
+            "save_customer_spec": lambda p: _customer_specs.save_spec(
+                p.get("customer", ""), p.get("spec_type", "general"),
+                p.get("rule", ""), p.get("dc")
+            ),
+            "get_customer_specs": lambda p: _customer_specs.get_specs(p.get("customer")),
 
             # Export tools
             "export_excel": lambda p: self.exporter.export(
                 p.get("columns"), p.get("rows"), p.get("filename", ""), p.get("sheets")
+            ),
+            "export_sql_to_excel": lambda p: self.exporter.export_from_queries(
+                p.get("queries", []), p.get("filename", ""), p.get("split_by_column")
             ),
 
             # Harvest Planner write tools (via API)

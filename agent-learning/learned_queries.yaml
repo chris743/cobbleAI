@@ -540,58 +540,92 @@ entries:
     percentage, highlight high-cost areas like packing operations, and note facility
     splits (Sanger vs Reedley).'
   verified: false
-- timestamp: '2026-03-08T10:26:26.613374'
-  question: Generate comprehensive daily production schedule organized by equipment
-    line with all open orders
-  sql: "SELECT \n    SONO, CustomerName, Commodity, Style, SizeName, Grade,\n    ORDERQNT,\
-    \ equivqnt, EQUIVFACTOR, UNITSPERPALLET,\n    CAST(SHIPDATETIME AS DATE) as ShipDate,\n\
-    \    SOStatus, RESERVEQNT\nFROM dbo.VW_LPSALESORDERS\nWHERE CAST(SHIPDATETIME\
-    \ AS DATE) >= CAST(GETDATE() AS DATE)\n  AND ORDERQNT > 0\n  AND SOStatus IN ('Order',\
-    \ 'Open')\nORDER BY CAST(SHIPDATETIME AS DATE), Style, Commodity, SizeName, Grade"
-  notes: Pulls all open orders for production scheduling. Filter food bank orders
-    separately due to lbs vs carton units. Always filter juice orders unless specifically
-    requested.
-  verified: false
-- timestamp: '2026-03-09T09:46:54.567494'
-  question: Generate a comprehensive daily production schedule for all open orders
-    organized by equipment line
-  sql: "-- Step 1: Get all open orders\nSELECT \n    SONO, CustomerName, Commodity,\
-    \ Style, SizeName, Grade,\n    ORDERQNT, equivqnt, EQUIVFACTOR, UNITSPERPALLET,\n\
-    \    CAST(SHIPDATETIME AS DATE) as ShipDate,\n    SOStatus, RESERVEQNT,\n    --\
-    \ Classify equipment line by style\n    CASE \n        WHEN Style LIKE '%FB%'\
-    \ THEN 'Film Bag'\n        WHEN Style LIKE '%CB%' THEN 'Combo Bag'\n        WHEN\
-    \ Style LIKE '%NB%' THEN 'Net Bag'\n        WHEN Style LIKE '%WM%' THEN 'Wicketed\
-    \ Mesh'\n        WHEN Style LIKE '%HD%' THEN 'Header Bag'\n        ELSE 'Bulk'\n\
-    \    END as EquipmentLine\nFROM dbo.VW_LPSALESORDERS\nWHERE CAST(SHIPDATETIME\
-    \ AS DATE) >= CAST(GETDATE() AS DATE)\n  AND ORDERQNT > 0\n  AND SOStatus IN ('Order',\
-    \ 'Open')\n  AND Grade != 'JUICE'\nORDER BY CAST(SHIPDATETIME AS DATE), Style,\
-    \ Commodity, SizeName, Grade\n\n-- Step 2: Get inventory availability\nSELECT\
-    \ \n    Commodity, Size, Grade,\n    SUM(AvailableQuantity) as AvailableBins,\n\
-    \    SUM(equivctns) as AvailableEquivCtns\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity\
-    \ > 0\nGROUP BY Commodity, Size, Grade\n\n-- Step 3: Get packout percentages\n\
-    SELECT \n    Commodity, \n    CASE \n        WHEN Commodity = 'MANDARIN' THEN\
-    \ 37.5\n        ELSE 23.2\n    END as CtnPerBin,\n    AVG(pct_of_commodity) as\
-    \ AvgPackout\nFROM dbo.VW_14DAYAVGPACKOUT\nWHERE pct_of_commodity > 0\nGROUP BY\
-    \ Commodity"
-  notes: This query pattern generates production schedules by classifying orders into
-    equipment lines based on style suffixes (FB=Film Bag, CB=Combo Bag, NB=Net Bag,
-    WM=Wicketed Mesh, HD=Header Bag, everything else=Bulk). Shows individual order
-    lines with full details needed for production teams. Includes inventory analysis
-    and capacity planning.
-  verified: false
 - timestamp: '2026-03-09T10:10:47.673861'
   question: Generate comprehensive daily production schedule organized by equipment
-    line with warehouse filtering and reserve filtering
-  sql: "SELECT \n    SONO, CustomerName, Commodity, Style, SizeName, Grade,\n    ORDERQNT,\
-    \ equivqnt, EQUIVFACTOR, UNITSPERPALLET,\n    CAST(SHIPDATETIME AS DATE) as ShipDate,\n\
+    line with analysis
+  sql: "SELECT \n    CASE \n        WHEN Style LIKE '%FB%' THEN 'Film Bag'\n     \
+    \   WHEN Style LIKE '%CB%' THEN 'Combo Bag'\n        WHEN Style LIKE '%NB%' THEN\
+    \ 'Net Bag'\n        WHEN Style LIKE '%WM%' THEN 'Wicketed Mesh'\n        WHEN\
+    \ Style LIKE '%HD%' THEN 'Header Bag'\n        ELSE 'Bulk'\n    END as EquipmentLine,\n\
+    \    SONO, CustomerName, Commodity, Style, SizeName, Grade,\n    ORDERQNT, equivqnt,\
+    \ EQUIVFACTOR, UNITSPERPALLET,\n    CAST(SHIPDATETIME AS DATE) as ShipDate,\n\
     \    SOStatus, RESERVEQNT, Warehouse\nFROM dbo.VW_LPSALESORDERS\nWHERE CAST(SHIPDATETIME\
     \ AS DATE) >= CAST(GETDATE() AS DATE)\n  AND ORDERQNT > 0\n  AND SOStatus IN ('Order',\
-    \ 'Open')\n  AND Warehouse = 'COBBLESTONE SANGER'\n  AND ORDERQNT > ISNULL(RESERVEQNT,\
-    \ 0)\nORDER BY CAST(SHIPDATETIME AS DATE), Style, Commodity, SizeName, Grade"
-  notes: "Comprehensive production schedule query. Key filters: warehouse restriction,\
-    \ reserve filtering (only orders with unreserved quantity), status filtering.\
-    \ Classifies by style suffixes: FB=Film Bag, CB=Combo, NB=Net Bag, WM=Wicketed\
-    \ Mesh, HD=Header Bag, everything else=Bulk. Always check inventory availability\
-    \ and apply size substitution rules for film bags (\xB11 size). Use multi-sheet\
-    \ Excel export with summary analysis."
+    \ 'Open')\nORDER BY \n    CASE \n        WHEN Style LIKE '%FB%' THEN 1\n     \
+    \   WHEN Style LIKE '%CB%' THEN 2\n        WHEN Style LIKE '%NB%' THEN 3\n   \
+    \     WHEN Style LIKE '%WM%' THEN 4\n        WHEN Style LIKE '%HD%' THEN 5\n \
+    \       ELSE 6\n    END,\n    Style, Commodity, SizeName, Grade, CAST(SHIPDATETIME\
+    \ AS DATE)"
+  notes: 'IMPORTANT: Do NOT add extra filters like Warehouse, Grade != ''JUICE'',
+    or reserve filtering. Include ALL open orders. Use export_sql_to_excel with split_by_column=''EquipmentLine''
+    to create one Excel tab per equipment line. EquipmentLine must be the FIRST column.
+    Sort by line, then style (minimize changeovers), then commodity/size/grade. Also
+    query inventory and packout % to run size substitution analysis (inverse bell
+    curve strategy). Also need capacity analysis and completion insights per line.'
+  verified: true
+- timestamp: '2026-03-09T11:46:07.662018'
+  question: Generate comprehensive daily production schedule for all open orders by
+    equipment line
+  sql: "SELECT SONO, CustomerName, Commodity, Style, SizeName, Grade,\n    ORDERQNT,\
+    \ RESERVEQNT, equivqnt, EQUIVFACTOR, UNITSPERPALLET,\n    CAST(SHIPDATETIME AS\
+    \ DATE) as ShipDate,\n    SOStatus, Warehouse,\n    CASE\n        WHEN Style LIKE\
+    \ '%FB%' THEN 'Film Bag'\n        WHEN Style LIKE '%CB%' THEN 'Combo Bag'\n  \
+    \      WHEN Style LIKE '%NB%' THEN 'Net Bag'\n        WHEN Style LIKE '%WM%' THEN\
+    \ 'Wicketed Mesh'\n        WHEN Style LIKE '%HD%' THEN 'Header Bag'\n        ELSE\
+    \ 'Bulk'\n    END as EquipmentLine\nFROM dbo.VW_LPSALESORDERS\nWHERE CAST(SHIPDATETIME\
+    \ AS DATE) >= CAST(GETDATE() AS DATE)\n  AND ORDERQNT > 0\n  AND SOStatus IN ('Order',\
+    \ 'Open')\n  AND Warehouse = 'COBBLESTONE SANGER'\n  AND ORDERQNT > RESERVEQNT"
+  notes: 'Critical filters: ship date >= today, ORDERQNT > RESERVEQNT (only unshipped
+    quantities), warehouse = ''COBBLESTONE SANGER''. Equipment line classification
+    based on style suffixes. Use export_sql_to_excel for complete production schedules.'
+  verified: false
+- timestamp: '2026-03-09T11:49:59.853297'
+  question: Generate comprehensive production schedule with capacity analysis and
+    equipment line classification
+  sql: "-- Production schedule summary with capacity analysis\nWITH OrderSummary AS\
+    \ (\n  SELECT \n    CASE\n      WHEN Style LIKE '%FB%' THEN 'Film Bag'\n     \
+    \ WHEN Style LIKE '%CB%' THEN 'Combo Bag' \n      WHEN Style LIKE '%NB%' THEN\
+    \ 'Net Bag'\n      WHEN Style LIKE '%WM%' THEN 'Wicketed Mesh'\n      WHEN Style\
+    \ LIKE '%HD%' THEN 'Header Bag'\n      ELSE 'Bulk'\n    END as EquipmentLine,\n\
+    \    COUNT(*) as OrderCount,\n    SUM(ORDERQNT - ISNULL(RESERVEQNT, 0)) as UnreservedUnits,\n\
+    \    SUM(equivqnt * (ORDERQNT - ISNULL(RESERVEQNT, 0)) / ORDERQNT) as UnreservedEquivCtns\n\
+    \  FROM dbo.VW_LPSALESORDERS\n  WHERE CAST(SHIPDATETIME AS DATE) >= CAST(GETDATE()\
+    \ AS DATE)\n    AND ORDERQNT > 0\n    AND SOStatus IN ('Order', 'Open')\n    AND\
+    \ Warehouse = 'COBBLESTONE SANGER'\n    AND ORDERQNT > ISNULL(RESERVEQNT, 0)\n\
+    \  GROUP BY CASE\n    WHEN Style LIKE '%FB%' THEN 'Film Bag'\n    WHEN Style LIKE\
+    \ '%CB%' THEN 'Combo Bag'\n    WHEN Style LIKE '%NB%' THEN 'Net Bag'\n    WHEN\
+    \ Style LIKE '%WM%' THEN 'Wicketed Mesh'\n    WHEN Style LIKE '%HD%' THEN 'Header\
+    \ Bag'\n    ELSE 'Bulk'\n  END\n)\nSELECT \n  EquipmentLine,\n  OrderCount,\n\
+    \  UnreservedEquivCtns,\n  CASE EquipmentLine\n    WHEN 'Film Bag' THEN 42000\n\
+    \    WHEN 'Combo Bag' THEN 20000\n    WHEN 'Net Bag' THEN 5500\n    ELSE 20000\n\
+    \  END as DailyCapacity,\n  CASE \n    WHEN EquipmentLine = 'Film Bag' AND UnreservedEquivCtns\
+    \ > 42000 THEN 'OVER CAPACITY'\n    WHEN EquipmentLine = 'Combo Bag' AND UnreservedEquivCtns\
+    \ > 20000 THEN 'OVER CAPACITY'\n    WHEN EquipmentLine = 'Net Bag' AND UnreservedEquivCtns\
+    \ > 5500 THEN 'OVER CAPACITY'\n    WHEN EquipmentLine = 'Bulk' AND UnreservedEquivCtns\
+    \ > 20000 THEN 'OVER CAPACITY'\n    ELSE 'Within Capacity'\n  END as CapacityStatus\n\
+    FROM OrderSummary"
+  notes: "Key insights: Use ORDERQNT > ISNULL(RESERVEQNT, 0) to filter only unreserved\
+    \ quantities. Equipment line capacity: FB=42k, CB=20k, NB=5.5k, Bulk=20k. Use\
+    \ export_sql_to_excel for complete production schedules with individual order\
+    \ lines per equipment line sheet. Critical: Food bank juice orders convert lbs\
+    \ to cartons \xF740. Size substitution logic needed for film bags (\xB11 size)."
+  verified: false
+- timestamp: '2026-03-09T13:17:15.812568'
+  question: Generate comprehensive daily production schedule for all open orders by
+    equipment line
+  sql: "SELECT SONO, CustomerName, Commodity, Style, SizeName, Grade,\n    ORDERQNT,\
+    \ ISNULL(RESERVEQNT, 0) as RESERVEQNT, equivqnt, EQUIVFACTOR, \n    ISNULL(UNITSPERPALLET,\
+    \ 0) as UNITSPERPALLET,\n    CAST(SHIPDATETIME AS DATE) as ShipDate,\n    SOStatus,\
+    \ Warehouse,\n    CASE\n        WHEN Style LIKE '%FB%' THEN 'Film Bag'\n     \
+    \   WHEN Style LIKE '%CB%' THEN 'Combo Bag'\n        WHEN Style LIKE '%NB%' THEN\
+    \ 'Net Bag'\n        WHEN Style LIKE '%WM%' THEN 'Wicketed Mesh'\n        WHEN\
+    \ Style LIKE '%HD%' THEN 'Header Bag'\n        ELSE 'Bulk'\n    END as EquipmentLine\n\
+    FROM dbo.VW_LPSALESORDERS\nWHERE CAST(SHIPDATETIME AS DATE) >= CAST(GETDATE()\
+    \ AS DATE)\n  AND ORDERQNT > 0\n  AND SOStatus IN ('Order', 'Open')\n  AND Warehouse\
+    \ = 'COBBLESTONE SANGER'\n  AND ORDERQNT > ISNULL(RESERVEQNT, 0)"
+  notes: 'Critical filters: ship date >= today, ORDERQNT > RESERVEQNT (only unreserved
+    quantities), warehouse = COBBLESTONE SANGER. Equipment line classification based
+    on style suffixes. Use export_sql_to_excel for complete production schedules.
+    Food bank TRI-WALL orders are in LBS - divide by 40. Bulk equiv ctns from equivqnt
+    column can be massively inflated for food bank orders.'
   verified: false

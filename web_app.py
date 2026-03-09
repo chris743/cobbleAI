@@ -25,6 +25,7 @@ from agent_claude import run_agent_turn, run_agent_turn_streaming
 from auth import require_auth
 import chat_store
 import living_docs as ld
+import customer_specs as cs
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
@@ -263,6 +264,22 @@ def living_doc_history(doc_id):
     if not doc:
         abort(404)
     return jsonify(ld.list_snapshot_history(doc["id"]))
+
+
+# ── Customer Specs ────────────────────────────────────────────────────────────
+
+@app.route("/customer-specs", methods=["GET"])
+@require_auth
+def list_customer_specs():
+    return jsonify(cs.get_specs())
+
+
+@app.route("/customer-specs/<spec_id>", methods=["DELETE"])
+@require_auth
+def delete_customer_spec(spec_id):
+    if not cs.delete_spec(spec_id):
+        abort(404)
+    return jsonify({"ok": True})
 
 
 # ── File downloads ────────────────────────────────────────────────────────────
