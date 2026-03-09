@@ -415,24 +415,8 @@ class ExcelExporter:
         self.export_path = Path(export_path)
         self.export_path.mkdir(exist_ok=True)
 
-    def export(self, columns: list[str], rows: list[list], filename: str = "") -> dict:
-        if not columns or not rows:
-            return {"success": False, "error": "No data to export"}
-
-        file_id = str(uuid.uuid4())[:8]
-        if not filename:
-            filename = f"export_{file_id}"
-        # Sanitize filename
-        safe_name = "".join(c for c in filename if c.isalnum() or c in "_- ").strip()
-        if not safe_name:
-            safe_name = f"export_{file_id}"
-        xlsx_name = f"{safe_name}_{file_id}.xlsx"
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Data"
-
-        # Header row
+    def _write_sheet(self, ws, columns: list[str], rows: list[list]):
+        """Write headers and data rows to a worksheet."""
         header_font = Font(bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="1A1A2E", end_color="1A1A2E", fill_type="solid")
         for col_idx, col_name in enumerate(columns, 1):
@@ -441,7 +425,6 @@ class ExcelExporter:
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center")
 
-        # Data rows
         for row_idx, row in enumerate(rows, 2):
             for col_idx, value in enumerate(row, 1):
                 ws.cell(row=row_idx, column=col_idx, value=value)
@@ -449,10 +432,47 @@ class ExcelExporter:
         # Auto-fit column widths (approximate)
         for col_idx, col_name in enumerate(columns, 1):
             max_len = len(str(col_name))
-            for row in rows[:100]:  # Sample first 100 rows
+            for row in rows[:100]:
                 if col_idx - 1 < len(row):
                     max_len = max(max_len, len(str(row[col_idx - 1] or "")))
             ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = min(max_len + 3, 50)
+
+    def export(self, columns: list[str] = None, rows: list[list] = None,
+               filename: str = "", sheets: list[dict] = None) -> dict:
+        """Export to Excel. Supports single-sheet (columns/rows) or multi-sheet (sheets array).
+        Each sheet dict: { "name": "Sheet Name", "columns": [...], "rows": [[...], ...] }
+        """
+        # Build sheet list — support both single-sheet and multi-sheet calls
+        if sheets:
+            sheet_list = sheets
+        elif columns and rows:
+            sheet_list = [{"name": "Data", "columns": columns, "rows": rows}]
+        else:
+            return {"success": False, "error": "No data to export"}
+
+        # Validate
+        for s in sheet_list:
+            if not s.get("columns") or not s.get("rows"):
+                return {"success": False, "error": f"Sheet '{s.get('name', '?')}' has no data"}
+
+        file_id = str(uuid.uuid4())[:8]
+        if not filename:
+            filename = f"export_{file_id}"
+        safe_name = "".join(c for c in filename if c.isalnum() or c in "_- ").strip()
+        if not safe_name:
+            safe_name = f"export_{file_id}"
+        xlsx_name = f"{safe_name}_{file_id}.xlsx"
+
+        wb = Workbook()
+        # Remove the default sheet created by openpyxl
+        wb.remove(wb.active)
+
+        total_rows = 0
+        for sheet_def in sheet_list:
+            sheet_name = str(sheet_def.get("name", "Sheet"))[:31]  # Excel max 31 chars
+            ws = wb.create_sheet(title=sheet_name)
+            self._write_sheet(ws, sheet_def["columns"], sheet_def["rows"])
+            total_rows += len(sheet_def["rows"])
 
         filepath = self.export_path / xlsx_name
         wb.save(filepath)
@@ -461,8 +481,9 @@ class ExcelExporter:
             "success": True,
             "file_id": xlsx_name,
             "download_url": f"/download/{xlsx_name}",
-            "row_count": len(rows),
-            "message": f"Excel file ready: {xlsx_name}"
+            "row_count": total_rows,
+            "sheet_count": len(sheet_list),
+            "message": f"Excel file ready: {xlsx_name} ({len(sheet_list)} sheet{'s' if len(sheet_list) != 1 else ''})"
         }
 
 
@@ -632,6 +653,28 @@ class HarvestPlannerAPI:
 # =============================================================================
 # LIVING DOCUMENT HELPERS (for agent tool use)
 # =============================================================================
+
+def _agent_update_living_doc(name: str, new_name: str = None,
+                             new_description: str = None, new_prompt: str = None) -> dict:
+    doc = _living_docs.get_doc_by_name(name)
+    if not doc:
+        available = [d["name"] for d in _living_docs.list_docs()]
+        return {"error": f"No living document named '{name}'.", "available": available}
+    updated = _living_docs.update_doc(doc["id"], name=new_name,
+                                      description=new_description, prompt=new_prompt)
+    if not updated:
+        return {"error": "No fields to update."}
+    return {"success": True, "document": updated}
+
+
+def _agent_delete_living_doc(name: str) -> dict:
+    doc = _living_docs.get_doc_by_name(name)
+    if not doc:
+        available = [d["name"] for d in _living_docs.list_docs()]
+        return {"error": f"No living document named '{name}'.", "available": available}
+    _living_docs.delete_doc(doc["id"])
+    return {"success": True, "deleted": name}
+
 
 def _agent_get_living_doc(name: str) -> dict:
     doc = _living_docs.get_doc_by_name(name)
@@ -871,26 +914,38 @@ class AgentToolkit:
             # === EXPORT TOOLS ===
             {
                 "name": "export_excel",
-                "description": "Export data to a downloadable Excel (.xlsx) file. Pass the columns and rows from a previous execute_sql result. Returns a download link to include in your response.",
+                "description": "Export data to a downloadable Excel (.xlsx) file. Supports single-sheet (columns/rows) or multi-sheet (sheets array) exports. For multi-sheet, pass a 'sheets' array where each element has name, columns, and rows. Always use multi-sheet when the user asks for multiple tables or breakdowns in one file. Returns a download link to include in your response.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "columns": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Column headers for the spreadsheet"
+                            "description": "Column headers (single-sheet mode). Omit if using 'sheets'."
                         },
                         "rows": {
                             "type": "array",
                             "items": {"type": "array"},
-                            "description": "Data rows (array of arrays)"
+                            "description": "Data rows (single-sheet mode). Omit if using 'sheets'."
+                        },
+                        "sheets": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Sheet/tab name (max 31 chars)"},
+                                    "columns": {"type": "array", "items": {"type": "string"}},
+                                    "rows": {"type": "array", "items": {"type": "array"}}
+                                },
+                                "required": ["name", "columns", "rows"]
+                            },
+                            "description": "Array of sheets for multi-sheet export. Each sheet has a name, columns, and rows."
                         },
                         "filename": {
                             "type": "string",
                             "description": "Descriptive filename (without extension), e.g. 'navel_inventory_march'"
                         }
-                    },
-                    "required": ["columns", "rows"]
+                    }
                 }
             },
 
@@ -1023,6 +1078,46 @@ class AgentToolkit:
                     "required": ["name", "prompt"]
                 }
             },
+            {
+                "name": "update_living_document",
+                "description": "Update an existing living document's name, description, or prompt. Use when the user wants to change what a living document generates or rename it. Look up the document by name first using get_living_document or list_living_documents to get the ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Current name of the living document to update"
+                        },
+                        "new_name": {
+                            "type": "string",
+                            "description": "New display name (omit to keep current)"
+                        },
+                        "new_description": {
+                            "type": "string",
+                            "description": "New description (omit to keep current)"
+                        },
+                        "new_prompt": {
+                            "type": "string",
+                            "description": "New prompt to generate the document (omit to keep current)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "delete_living_document",
+                "description": "Delete a living document by name. Confirm with the user before calling this. The document and its snapshots will no longer be visible.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the living document to delete"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            },
         ]
     
     def handle_tool_call(self, tool_name: str, parameters: dict) -> dict:
@@ -1058,7 +1153,7 @@ class AgentToolkit:
 
             # Export tools
             "export_excel": lambda p: self.exporter.export(
-                p.get("columns", []), p.get("rows", []), p.get("filename", "")
+                p.get("columns"), p.get("rows"), p.get("filename", ""), p.get("sheets")
             ),
 
             # Harvest Planner write tools (via API)
@@ -1088,6 +1183,10 @@ class AgentToolkit:
                 p.get("name", ""), p.get("description", ""), p.get("prompt", ""),
                 created_by="agent",
             ),
+            "update_living_document": lambda p: _agent_update_living_doc(
+                p.get("name", ""), p.get("new_name"), p.get("new_description"), p.get("new_prompt"),
+            ),
+            "delete_living_document": lambda p: _agent_delete_living_doc(p.get("name", "")),
         }
         
         handler = handlers.get(tool_name)

@@ -35,6 +35,28 @@ export async function apiPost(url, body) {
   return data
 }
 
+export async function apiPut(url, body) {
+  const headers = await authHeaders()
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(body),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`)
+  return data
+}
+
+export async function apiDelete(url) {
+  const headers = await authHeaders()
+  const res = await fetch(url, { method: 'DELETE', headers })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || `${res.status} ${res.statusText}`)
+  }
+  return res.json()
+}
+
 /**
  * Stream a POST request as SSE. Calls onEvent for each parsed event.
  * Returns when the stream closes.

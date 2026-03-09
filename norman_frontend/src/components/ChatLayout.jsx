@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useClerk, useUser } from '@clerk/react'
-import { apiGet, apiPost, apiPostStream } from '../lib/api'
+import { apiGet, apiPost, apiPostStream, apiPut, apiDelete } from '../lib/api'
 import Sidebar from './Sidebar'
 import MessageRow from './MessageRow'
 import ThinkingRow from './ThinkingRow'
@@ -33,6 +33,8 @@ export default function ChatLayout() {
   const [livingDocs, setLivingDocs] = useState([])
   const [livingDocView, setLivingDocView] = useState(null)
   // livingDocView shape: { id, name, description, snapshot: { date, content, generated_at, is_today } | null }
+  const [editingDoc, setEditingDoc] = useState(null)
+  // editingDoc shape: { id, name, description, prompt } | null
 
   const chatRef = useRef(null)
   const inputRef = useRef(null)
@@ -167,6 +169,48 @@ export default function ChatLayout() {
     setIsWaiting(false)
   }
 
+  // Open edit modal for current living doc
+  const startEditLivingDoc = async () => {
+    if (!livingDocView) return
+    try {
+      const data = await apiGet(`/living-docs/${livingDocView.id}`)
+      setEditingDoc({ id: data.id, name: data.name, description: data.description || '', prompt: data.prompt })
+    } catch (e) {
+      console.error('Failed to load doc for editing:', e)
+    }
+  }
+
+  // Save living doc edits
+  const saveEditLivingDoc = async () => {
+    if (!editingDoc) return
+    try {
+      const updated = await apiPut(`/living-docs/${editingDoc.id}`, {
+        name: editingDoc.name,
+        description: editingDoc.description,
+        prompt: editingDoc.prompt,
+      })
+      setLivingDocView((prev) => prev ? { ...prev, name: updated.name, description: updated.description } : prev)
+      setEditingDoc(null)
+      loadLivingDocs()
+    } catch (e) {
+      console.error('Failed to update living doc:', e)
+    }
+  }
+
+  // Delete living doc
+  const deleteLivingDoc = async () => {
+    if (!livingDocView) return
+    if (!window.confirm(`Delete "${livingDocView.name}"? This cannot be undone.`)) return
+    try {
+      await apiDelete(`/living-docs/${livingDocView.id}`)
+      setLivingDocView(null)
+      setMessages([])
+      loadLivingDocs()
+    } catch (e) {
+      console.error('Failed to delete living doc:', e)
+    }
+  }
+
   // New conversation
   const newConversation = () => {
     setLivingDocView(null)
@@ -289,14 +333,32 @@ export default function ChatLayout() {
           )}
           <div className="topbar-spacer" />
           {livingDocView && (
-            <button
-              className="topbar-btn"
-              onClick={refreshLivingDoc}
-              disabled={isWaiting}
-              title="Regenerate today's snapshot"
-            >
-              &#x21BB;
-            </button>
+            <>
+              <button
+                className="topbar-btn"
+                onClick={refreshLivingDoc}
+                disabled={isWaiting}
+                title="Regenerate today's snapshot"
+              >
+                &#x21BB;
+              </button>
+              <button
+                className="topbar-btn"
+                onClick={startEditLivingDoc}
+                disabled={isWaiting}
+                title="Edit document settings"
+              >
+                &#x270E;
+              </button>
+              <button
+                className="topbar-btn topbar-btn-danger"
+                onClick={deleteLivingDoc}
+                disabled={isWaiting}
+                title="Delete document"
+              >
+                &#x2715;
+              </button>
+            </>
           )}
           <button className="topbar-btn" onClick={() => setDarkMode(!darkMode)} title="Toggle dark mode">
             {darkMode ? '\u2600' : '\u263E'}
@@ -374,6 +436,44 @@ export default function ChatLayout() {
           </div>
         )}
       </div>
+
+      {/* Edit living doc modal */}
+      {editingDoc && (
+        <div className="modal-overlay" onClick={() => setEditingDoc(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Edit Living Document</h3>
+            <label className="modal-label">
+              Name
+              <input
+                className="modal-input"
+                value={editingDoc.name}
+                onChange={(e) => setEditingDoc({ ...editingDoc, name: e.target.value })}
+              />
+            </label>
+            <label className="modal-label">
+              Description
+              <input
+                className="modal-input"
+                value={editingDoc.description}
+                onChange={(e) => setEditingDoc({ ...editingDoc, description: e.target.value })}
+              />
+            </label>
+            <label className="modal-label">
+              Prompt
+              <textarea
+                className="modal-textarea"
+                value={editingDoc.prompt}
+                onChange={(e) => setEditingDoc({ ...editingDoc, prompt: e.target.value })}
+                rows={6}
+              />
+            </label>
+            <div className="modal-actions">
+              <button className="modal-btn modal-btn-secondary" onClick={() => setEditingDoc(null)}>Cancel</button>
+              <button className="modal-btn modal-btn-primary" onClick={saveEditLivingDoc}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

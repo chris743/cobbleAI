@@ -54,6 +54,30 @@ def create_doc(name: str, description: str, prompt: str,
     }
 
 
+def update_doc(doc_id: str, **fields) -> dict | None:
+    """Update allowed fields on a living document definition."""
+    try:
+        oid = ObjectId(doc_id)
+    except Exception:
+        return None
+    allowed = {"name", "description", "prompt"}
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return None
+    _docs_col().update_one({"_id": oid, "active": True}, {"$set": updates})
+    return _to_dict(_docs_col().find_one({"_id": oid, "active": True}))
+
+
+def delete_doc(doc_id: str) -> bool:
+    """Soft-delete a living document (set active=False)."""
+    try:
+        oid = ObjectId(doc_id)
+    except Exception:
+        return False
+    result = _docs_col().update_one({"_id": oid, "active": True}, {"$set": {"active": False}})
+    return result.modified_count > 0
+
+
 def get_doc(doc_id: str) -> dict | None:
     try:
         oid = ObjectId(doc_id)

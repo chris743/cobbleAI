@@ -598,6 +598,86 @@ body {
 .auth-screen .auth-brand { font-size: 22px; font-weight: 700; color: var(--text-primary); }
 .auth-screen .auth-sub { font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; }
 
+/* ── Topbar danger button ── */
+.topbar-btn-danger:hover { color: var(--danger); }
+
+/* ── Modal ── */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+.modal {
+    background: var(--bg-white);
+    border-radius: 12px;
+    padding: 24px;
+    width: 90%;
+    max-width: 520px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+.modal h3 {
+    margin-bottom: 16px;
+    font-size: 18px;
+    color: var(--text-primary);
+}
+.modal-label {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+.modal-input, .modal-textarea {
+    display: block;
+    width: 100%;
+    margin-top: 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--bg-input);
+}
+.modal-textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+.modal-input:focus, .modal-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+.modal-btn {
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+}
+.modal-btn-secondary {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+.modal-btn-secondary:hover { border-color: var(--text-secondary); }
+.modal-btn-primary {
+    background: var(--accent);
+    color: #fff;
+}
+.modal-btn-primary:hover { background: var(--accent-hover); }
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
     .sidebar { position: fixed; z-index: 100; height: 100vh; }

@@ -540,3 +540,58 @@ entries:
     percentage, highlight high-cost areas like packing operations, and note facility
     splits (Sanger vs Reedley).'
   verified: false
+- timestamp: '2026-03-08T10:26:26.613374'
+  question: Generate comprehensive daily production schedule organized by equipment
+    line with all open orders
+  sql: "SELECT \n    SONO, CustomerName, Commodity, Style, SizeName, Grade,\n    ORDERQNT,\
+    \ equivqnt, EQUIVFACTOR, UNITSPERPALLET,\n    CAST(SHIPDATETIME AS DATE) as ShipDate,\n\
+    \    SOStatus, RESERVEQNT\nFROM dbo.VW_LPSALESORDERS\nWHERE CAST(SHIPDATETIME\
+    \ AS DATE) >= CAST(GETDATE() AS DATE)\n  AND ORDERQNT > 0\n  AND SOStatus IN ('Order',\
+    \ 'Open')\nORDER BY CAST(SHIPDATETIME AS DATE), Style, Commodity, SizeName, Grade"
+  notes: Pulls all open orders for production scheduling. Filter food bank orders
+    separately due to lbs vs carton units. Always filter juice orders unless specifically
+    requested.
+  verified: false
+- timestamp: '2026-03-09T09:46:54.567494'
+  question: Generate a comprehensive daily production schedule for all open orders
+    organized by equipment line
+  sql: "-- Step 1: Get all open orders\nSELECT \n    SONO, CustomerName, Commodity,\
+    \ Style, SizeName, Grade,\n    ORDERQNT, equivqnt, EQUIVFACTOR, UNITSPERPALLET,\n\
+    \    CAST(SHIPDATETIME AS DATE) as ShipDate,\n    SOStatus, RESERVEQNT,\n    --\
+    \ Classify equipment line by style\n    CASE \n        WHEN Style LIKE '%FB%'\
+    \ THEN 'Film Bag'\n        WHEN Style LIKE '%CB%' THEN 'Combo Bag'\n        WHEN\
+    \ Style LIKE '%NB%' THEN 'Net Bag'\n        WHEN Style LIKE '%WM%' THEN 'Wicketed\
+    \ Mesh'\n        WHEN Style LIKE '%HD%' THEN 'Header Bag'\n        ELSE 'Bulk'\n\
+    \    END as EquipmentLine\nFROM dbo.VW_LPSALESORDERS\nWHERE CAST(SHIPDATETIME\
+    \ AS DATE) >= CAST(GETDATE() AS DATE)\n  AND ORDERQNT > 0\n  AND SOStatus IN ('Order',\
+    \ 'Open')\n  AND Grade != 'JUICE'\nORDER BY CAST(SHIPDATETIME AS DATE), Style,\
+    \ Commodity, SizeName, Grade\n\n-- Step 2: Get inventory availability\nSELECT\
+    \ \n    Commodity, Size, Grade,\n    SUM(AvailableQuantity) as AvailableBins,\n\
+    \    SUM(equivctns) as AvailableEquivCtns\nFROM dbo.VW_BININVENTORY\nWHERE AvailableQuantity\
+    \ > 0\nGROUP BY Commodity, Size, Grade\n\n-- Step 3: Get packout percentages\n\
+    SELECT \n    Commodity, \n    CASE \n        WHEN Commodity = 'MANDARIN' THEN\
+    \ 37.5\n        ELSE 23.2\n    END as CtnPerBin,\n    AVG(pct_of_commodity) as\
+    \ AvgPackout\nFROM dbo.VW_14DAYAVGPACKOUT\nWHERE pct_of_commodity > 0\nGROUP BY\
+    \ Commodity"
+  notes: This query pattern generates production schedules by classifying orders into
+    equipment lines based on style suffixes (FB=Film Bag, CB=Combo Bag, NB=Net Bag,
+    WM=Wicketed Mesh, HD=Header Bag, everything else=Bulk). Shows individual order
+    lines with full details needed for production teams. Includes inventory analysis
+    and capacity planning.
+  verified: false
+- timestamp: '2026-03-09T10:10:47.673861'
+  question: Generate comprehensive daily production schedule organized by equipment
+    line with warehouse filtering and reserve filtering
+  sql: "SELECT \n    SONO, CustomerName, Commodity, Style, SizeName, Grade,\n    ORDERQNT,\
+    \ equivqnt, EQUIVFACTOR, UNITSPERPALLET,\n    CAST(SHIPDATETIME AS DATE) as ShipDate,\n\
+    \    SOStatus, RESERVEQNT, Warehouse\nFROM dbo.VW_LPSALESORDERS\nWHERE CAST(SHIPDATETIME\
+    \ AS DATE) >= CAST(GETDATE() AS DATE)\n  AND ORDERQNT > 0\n  AND SOStatus IN ('Order',\
+    \ 'Open')\n  AND Warehouse = 'COBBLESTONE SANGER'\n  AND ORDERQNT > ISNULL(RESERVEQNT,\
+    \ 0)\nORDER BY CAST(SHIPDATETIME AS DATE), Style, Commodity, SizeName, Grade"
+  notes: "Comprehensive production schedule query. Key filters: warehouse restriction,\
+    \ reserve filtering (only orders with unreserved quantity), status filtering.\
+    \ Classifies by style suffixes: FB=Film Bag, CB=Combo, NB=Net Bag, WM=Wicketed\
+    \ Mesh, HD=Header Bag, everything else=Bulk. Always check inventory availability\
+    \ and apply size substitution rules for film bags (\xB11 size). Use multi-sheet\
+    \ Excel export with summary analysis."
+  verified: false

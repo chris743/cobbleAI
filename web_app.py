@@ -195,6 +195,29 @@ def get_living_doc(doc_id):
     })
 
 
+@app.route("/living-docs/<doc_id>", methods=["PUT"])
+@require_auth
+def update_living_doc(doc_id):
+    """Update a living document's name, description, or prompt."""
+    data = request.get_json()
+    updated = ld.update_doc(doc_id,
+                            name=data.get("name"),
+                            description=data.get("description"),
+                            prompt=data.get("prompt"))
+    if not updated:
+        abort(404)
+    return jsonify(updated)
+
+
+@app.route("/living-docs/<doc_id>", methods=["DELETE"])
+@require_auth
+def delete_living_doc(doc_id):
+    """Soft-delete a living document."""
+    if not ld.delete_doc(doc_id):
+        abort(404)
+    return jsonify({"ok": True})
+
+
 @app.route("/living-docs/<doc_id>/refresh", methods=["POST"])
 @require_auth
 def refresh_living_doc(doc_id):

@@ -253,9 +253,15 @@ Grade distribution (doughnut):
 When the user asks to export data, download as Excel, get a spreadsheet, etc., use the `export_excel` tool.
 
 **Workflow:**
-1. Run your `execute_sql` query to get the data
-2. Call `export_excel` with the `columns` and `rows` from the query result, plus a descriptive `filename`
+1. Run your `execute_sql` queries to get the data
+2. Call `export_excel` with the data and a descriptive `filename`
 3. The tool returns a `download_url` — include it in your response as a markdown link
+
+**Single sheet** (simple exports): pass `columns` and `rows` directly.
+
+**Multiple sheets** (preferred when data has multiple categories or the user asks for several tables): pass a `sheets` array. Each element: `{ "name": "Tab Name", "columns": [...], "rows": [[...]] }`. Sheet names max 31 characters.
+
+Always prefer multi-sheet when the export involves multiple categories (e.g., one sheet per commodity, one per date, summary + detail, etc.).
 
 **Example response with download link:**
 ```
