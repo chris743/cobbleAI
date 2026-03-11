@@ -16,6 +16,7 @@ import json
 from dotenv import load_dotenv
 from anthropic import Anthropic
 from agent_tools import AgentToolkit
+from agent_tools.user_context import set_user_id
 
 # Load environment variables
 load_dotenv()
@@ -45,12 +46,15 @@ def get_tools():
     return tools
 
 
-def run_agent_turn(messages: list, max_turns: int = None, log_fn=None) -> str:
+def run_agent_turn(messages: list, max_turns: int = None, log_fn=None, user_id: str = None) -> str:
     """
     Run the agent for one user question, continuing the conversation in messages.
     Messages list is mutated in place to preserve history for follow-ups.
     log_fn: optional callable for tool call logging (defaults to print).
+    user_id: Clerk user ID, set in context for per-user tools (O365).
     """
+    if user_id:
+        set_user_id(user_id)
     if log_fn is None:
         log_fn = print
     max_turns = max_turns or MAX_TURNS
@@ -99,12 +103,15 @@ def run_agent_turn(messages: list, max_turns: int = None, log_fn=None) -> str:
     return "\n".join(accumulated_text) if accumulated_text else "Max turns reached without final response."
 
 
-def run_agent_turn_streaming(messages: list, max_turns: int = None, log_fn=None):
+def run_agent_turn_streaming(messages: list, max_turns: int = None, log_fn=None, user_id: str = None):
     """
     Generator version of run_agent_turn that yields SSE events.
     Yields text tokens as they arrive, tool status events, and a final done event.
     Messages list is mutated in place.
+    user_id: Clerk user ID, set in context for per-user tools (O365).
     """
+    if user_id:
+        set_user_id(user_id)
     if log_fn is None:
         log_fn = print
     max_turns = max_turns or MAX_TURNS

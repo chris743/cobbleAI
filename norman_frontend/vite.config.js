@@ -13,6 +13,7 @@ export default defineConfig({
       '/download': 'http://127.0.0.1:8000',
       '/living-docs': 'http://127.0.0.1:8000',
       '/customer-specs': 'http://127.0.0.1:8000',
+      '/o365': 'http://127.0.0.1:8000',
     }
   }
 })

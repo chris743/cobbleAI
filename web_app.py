@@ -26,6 +26,7 @@ from auth import require_auth
 import chat_store
 import living_docs as ld
 import customer_specs as cs
+import o365_auth
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
@@ -69,7 +70,7 @@ def chat():
 
     # Run agent (mutates messages in place with assistant + tool_result entries)
     try:
-        response_text = run_agent_turn(messages, log_fn=app.logger.info)
+        response_text = run_agent_turn(messages, log_fn=app.logger.info, user_id=user_id)
     except Exception as e:
         app.logger.exception("Agent error")
         chat_store.update_messages(conversation_id, messages)
@@ -110,13 +111,16 @@ def chat_stream():
     messages = convo["messages"]
     messages.append({"role": "user", "content": user_message})
 
+    # Capture user_id before entering generator (request context won't be available inside)
+    current_user_id = user_id
+
     def generate():
         import json as _json
         # Send conversation_id first
         yield f"data: {_json.dumps({'type': 'meta', 'conversation_id': conversation_id})}\n\n"
 
         try:
-            for event_type, payload in run_agent_turn_streaming(messages, log_fn=app.logger.info):
+            for event_type, payload in run_agent_turn_streaming(messages, log_fn=app.logger.info, user_id=current_user_id):
                 if event_type == "token":
                     yield f"data: {_json.dumps({'type': 'token', 'text': payload})}\n\n"
                 elif event_type == "tool":
@@ -282,21 +286,105 @@ def delete_customer_spec(spec_id):
     return jsonify({"ok": True})
 
 
+# ── Microsoft 365 ─────────────────────────────────────────────────────────────
+
+O365_REDIRECT_URI = os.getenv("O365_REDIRECT_URI", "http://localhost:5000/o365/callback")
+
+
+@app.route("/o365/status")
+@require_auth
+def o365_status():
+    if not o365_auth.is_configured():
+        return jsonify({"configured": False, "connected": False})
+    connected = o365_auth.is_connected(request.clerk_user_id)
+    return jsonify({"configured": True, "connected": connected})
+
+
+@app.route("/o365/auth-url")
+@require_auth
+def o365_auth_url():
+    if not o365_auth.is_configured():
+        return jsonify({"error": "Microsoft 365 integration is not configured on the server"}), 400
+    url, state = o365_auth.get_auth_url(request.clerk_user_id, O365_REDIRECT_URI)
+    return jsonify({"url": url})
+
+
+@app.route("/o365/callback")
+def o365_callback():
+    """OAuth callback from Microsoft. Runs in popup, closes itself on completion."""
+    code = request.args.get("code")
+    state = request.args.get("state")
+    error = request.args.get("error")
+
+    if error:
+        return _o365_callback_html(False, request.args.get("error_description", error))
+
+    if not code or not state:
+        return _o365_callback_html(False, "Missing authorization code")
+
+    # Reconstruct callback URL using configured redirect URI (request.url may show
+    # the wrong host/port when behind Vite proxy)
+    callback_url = O365_REDIRECT_URI + "?" + request.query_string.decode("utf-8")
+
+    app.logger.info(f"O365 callback — state={state[:20]}... code={'yes' if code else 'no'}")
+
+    success, err = o365_auth.complete_auth(
+        callback_url=callback_url,
+        redirect_uri=O365_REDIRECT_URI,
+        state=state,
+    )
+
+    app.logger.info(f"O365 auth result: success={success}, err={err}")
+    return _o365_callback_html(success, err)
+
+
+def _o365_callback_html(success: bool, error: str = None):
+    """Return HTML that notifies the opener window and closes the popup."""
+    status = "connected" if success else "error"
+    msg = error or ""
+    return f"""<!DOCTYPE html>
+<html><head><title>Microsoft 365</title></head>
+<body>
+<p>{"Connected successfully!" if success else f"Connection failed: {msg}"}</p>
+<p>You can close this window.</p>
+<script>
+  if (window.opener) {{
+    window.opener.postMessage({{ type: 'o365-auth', status: '{status}', error: '{msg}' }}, '*');
+  }}
+  setTimeout(function() {{ window.close(); }}, 1500);
+</script>
+</body></html>"""
+
+
+@app.route("/o365/disconnect", methods=["POST"])
+@require_auth
+def o365_disconnect():
+    o365_auth.disconnect(request.clerk_user_id)
+    return jsonify({"ok": True})
+
+
 # ── File downloads ────────────────────────────────────────────────────────────
 
 EXPORTS_DIR = os.path.join(os.path.dirname(__file__), "exports")
 
 
+_DOWNLOAD_MIMETYPES = {
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pdf": "application/pdf",
+}
+
+
 @app.route("/download/<filename>")
 @require_auth
 def download_file(filename):
-    # Only allow .xlsx files and block path traversal
-    if not filename.endswith(".xlsx") or "/" in filename or "\\" in filename:
+    # Block path traversal
+    if "/" in filename or "\\" in filename:
         abort(404)
-    return send_from_directory(
-        EXPORTS_DIR, filename, as_attachment=True,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    ext = os.path.splitext(filename)[1].lower()
+    mimetype = _DOWNLOAD_MIMETYPES.get(ext)
+    if not mimetype:
+        abort(404)
+    return send_from_directory(EXPORTS_DIR, filename, as_attachment=True, mimetype=mimetype)
 
 
 if __name__ == "__main__":
