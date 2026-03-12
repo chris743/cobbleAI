@@ -1,6 +1,9 @@
 """Microsoft 365 agent tools — email, calendar, OneDrive, SharePoint."""
 
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
+
+_EXPORTS_DIR = Path(__file__).resolve().parent.parent / "exports"
 
 
 def _get_account():
@@ -137,12 +140,26 @@ def send_email(params: dict) -> dict:
     to = params.get("to", [])
     subject = params.get("subject", "")
     body = params.get("body", "")
+    attachments = params.get("attachments", [])
 
     if not to or not subject or not body:
         return {"success": False, "error": "to, subject, and body are required"}
 
     if isinstance(to, str):
         to = [to]
+    if isinstance(attachments, str):
+        attachments = [attachments]
+
+    # Resolve attachment file paths from export file IDs
+    resolved_files = []
+    for file_id in attachments:
+        # Block path traversal
+        if "/" in file_id or "\\" in file_id or ".." in file_id:
+            return {"success": False, "error": f"Invalid attachment filename: {file_id}"}
+        filepath = _EXPORTS_DIR / file_id
+        if not filepath.is_file():
+            return {"success": False, "error": f"Attachment not found: {file_id}"}
+        resolved_files.append(filepath)
 
     try:
         mailbox = account.mailbox()
@@ -150,9 +167,14 @@ def send_email(params: dict) -> dict:
         msg.to.add(to)
         msg.subject = subject
         msg.body = body
+
+        for filepath in resolved_files:
+            msg.attachments.add(str(filepath))
+
         msg.send()
 
-        return {"success": True, "message": f"Email sent: {subject}"}
+        att_note = f" with {len(resolved_files)} attachment(s)" if resolved_files else ""
+        return {"success": True, "message": f"Email sent: {subject}{att_note}"}
     except Exception as e:
         return {"success": False, "error": f"Failed to send email: {e}"}
 
@@ -376,7 +398,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "o365_send_email",
-        "description": "Send a new email. Always confirm the recipients, subject, and body with the user before sending.",
+        "description": "Send a new email, optionally with file attachments. To email a document, first export it (export_excel or export_sql_to_excel or export_pdf), then pass the file_id from the export result as an attachment. Always confirm the recipients, subject, and body with the user before sending.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -392,6 +414,11 @@ TOOL_DEFINITIONS = [
                 "body": {
                     "type": "string",
                     "description": "Email body (HTML supported)",
+                },
+                "attachments": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "File IDs to attach (from export_excel/export_sql_to_excel/export_pdf results, e.g. 'navel_inventory_a1b2c3d4.xlsx')",
                 },
             },
             "required": ["to", "subject", "body"],
