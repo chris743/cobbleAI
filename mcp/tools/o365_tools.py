@@ -17,6 +17,12 @@ def _get_account():
     return o365_auth.get_account(user_id)
 
 
+def _get_norman_account():
+    """Get Norman's O365 Account (client credentials flow)."""
+    import norman_email
+    return norman_email.get_account()
+
+
 def _not_connected():
     return {
         "success": False,
@@ -24,13 +30,16 @@ def _not_connected():
     }
 
 
-# ── Email tools ──────────────────────────────────────────────────────────────
+def _norman_not_connected():
+    return {
+        "success": False,
+        "error": "Norman's mailbox is not accessible. Check O365 app credentials and Application permissions (Mail.Read, Mail.ReadWrite, Mail.Send).",
+    }
 
-def list_emails(params: dict) -> dict:
-    account = _get_account()
-    if not account:
-        return _not_connected()
 
+# ── Shared email helpers ─────────────────────────────────────────────────────
+
+def _list_emails_for_account(account, params: dict, mailbox_label: str) -> dict:
     folder_name = params.get("folder", "Inbox")
     limit = min(params.get("limit", 15), 50)
     search = params.get("search")
@@ -64,16 +73,12 @@ def list_emails(params: dict) -> dict:
                 "preview": (msg.body_preview or "")[:200],
             })
 
-        return {"success": True, "emails": results, "count": len(results)}
+        return {"success": True, "mailbox": mailbox_label, "emails": results, "count": len(results)}
     except Exception as e:
-        return {"success": False, "error": f"Failed to list emails: {e}"}
+        return {"success": False, "error": f"Failed to list emails from {mailbox_label}: {e}"}
 
 
-def read_email(params: dict) -> dict:
-    account = _get_account()
-    if not account:
-        return _not_connected()
-
+def _read_email_for_account(account, params: dict, mailbox_label: str) -> dict:
     email_id = params.get("email_id", "")
     if not email_id:
         return {"success": False, "error": "email_id is required"}
@@ -86,6 +91,7 @@ def read_email(params: dict) -> dict:
 
         return {
             "success": True,
+            "mailbox": mailbox_label,
             "email": {
                 "id": msg.object_id,
                 "subject": msg.subject,
@@ -102,15 +108,10 @@ def read_email(params: dict) -> dict:
             },
         }
     except Exception as e:
-        return {"success": False, "error": f"Failed to read email: {e}"}
+        return {"success": False, "error": f"Failed to read email from {mailbox_label}: {e}"}
 
 
-def reply_email(params: dict) -> dict:
-    """Reply to an email. Always uses the user's O365 account (replies must come from the original recipient)."""
-    account = _get_account()
-    if not account:
-        return _not_connected()
-
+def _reply_email_for_account(account, params: dict, mailbox_label: str) -> dict:
     email_id = params.get("email_id", "")
     reply_body = params.get("body", "")
     reply_all = params.get("reply_all", False)
@@ -128,9 +129,59 @@ def reply_email(params: dict) -> dict:
         reply.body = reply_body
         reply.send()
 
-        return {"success": True, "message": f"Reply sent to {msg.subject}"}
+        return {"success": True, "message": f"Reply sent from {mailbox_label}: {msg.subject}"}
     except Exception as e:
-        return {"success": False, "error": f"Failed to send reply: {e}"}
+        return {"success": False, "error": f"Failed to send reply from {mailbox_label}: {e}"}
+
+
+# ── Email tools ──────────────────────────────────────────────────────────────
+
+def list_emails(params: dict) -> dict:
+    """List emails from the user's mailbox."""
+    account = _get_account()
+    if not account:
+        return _not_connected()
+    return _list_emails_for_account(account, params, "user")
+
+
+def read_email(params: dict) -> dict:
+    """Read a specific email from the user's mailbox."""
+    account = _get_account()
+    if not account:
+        return _not_connected()
+    return _read_email_for_account(account, params, "user")
+
+
+def reply_email(params: dict) -> dict:
+    """Reply to an email from the user's mailbox."""
+    account = _get_account()
+    if not account:
+        return _not_connected()
+    return _reply_email_for_account(account, params, "user")
+
+
+def norman_list_emails(params: dict) -> dict:
+    """List emails from Norman's mailbox (norman@cobblestonefruit.com)."""
+    account = _get_norman_account()
+    if not account:
+        return _norman_not_connected()
+    return _list_emails_for_account(account, params, "norman")
+
+
+def norman_read_email(params: dict) -> dict:
+    """Read a specific email from Norman's mailbox."""
+    account = _get_norman_account()
+    if not account:
+        return _norman_not_connected()
+    return _read_email_for_account(account, params, "norman")
+
+
+def norman_reply_email(params: dict) -> dict:
+    """Reply to an email in Norman's mailbox (sends as norman@cobblestonefruit.com)."""
+    account = _get_norman_account()
+    if not account:
+        return _norman_not_connected()
+    return _reply_email_for_account(account, params, "norman")
 
 
 def send_email(params: dict) -> dict:
@@ -355,7 +406,7 @@ def list_sharepoint(params: dict) -> dict:
 TOOL_DEFINITIONS = [
     {
         "name": "o365_list_emails",
-        "description": "List recent emails from the user's Microsoft 365 mailbox. Supports searching and filtering by folder (Inbox, Sent, Drafts). Returns subject, sender, date, and preview for each email. Use this to summarize what's in the user's inbox or find specific emails.",
+        "description": "List recent emails from the user's personal Microsoft 365 mailbox. Use this when the user asks to check 'my emails' or 'my inbox'. Supports searching and filtering by folder.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -377,7 +428,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "o365_read_email",
-        "description": "Read the full content of a specific email by its ID. Use after o365_list_emails to get the full body of an email the user wants to read.",
+        "description": "Read the full content of a specific email from the user's mailbox by its ID. Use after o365_list_emails.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -391,13 +442,71 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "o365_reply_email",
-        "description": "Reply to an email. Compose the reply body based on the user's instructions and the original email content. Always confirm the reply content with the user before sending.",
+        "description": "Reply to an email in the user's mailbox. Sends from the user's own email address. Always confirm the reply content with the user before sending.",
         "parameters": {
             "type": "object",
             "properties": {
                 "email_id": {
                     "type": "string",
-                    "description": "The email ID to reply to",
+                    "description": "The email ID to reply to (from the user's mailbox)",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "The reply message body (HTML supported)",
+                },
+                "reply_all": {
+                    "type": "boolean",
+                    "description": "Reply to all recipients (default: false)",
+                },
+            },
+            "required": ["email_id", "body"],
+        },
+    },
+    {
+        "name": "norman_list_emails",
+        "description": "List recent emails from Norman's own mailbox (norman@cobblestonefruit.com). Use this to check Norman's inbox — e.g., to see replies to reports Norman sent, or emails addressed to Norman. This is Norman's service mailbox, separate from the user's personal mailbox.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "folder": {
+                    "type": "string",
+                    "enum": ["Inbox", "Sent", "Drafts"],
+                    "description": "Mail folder to read from (default: Inbox)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max emails to return (default: 15, max: 50)",
+                },
+                "search": {
+                    "type": "string",
+                    "description": "Search query to filter emails (searches subject, body, sender)",
+                },
+            },
+        },
+    },
+    {
+        "name": "norman_read_email",
+        "description": "Read the full content of a specific email from Norman's mailbox by its ID. Use after norman_list_emails.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "email_id": {
+                    "type": "string",
+                    "description": "The email's unique ID (from norman_list_emails results)",
+                },
+            },
+            "required": ["email_id"],
+        },
+    },
+    {
+        "name": "norman_reply_email",
+        "description": "Reply to an email in Norman's mailbox. Sends the reply as norman@cobblestonefruit.com. Use this to respond to emails that were sent to Norman or to follow up on threads Norman started. Follow the email reply rules: only reply to threads Norman started, emails addressed to Norman, or when the user explicitly asks.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "email_id": {
+                    "type": "string",
+                    "description": "The email ID to reply to (from Norman's mailbox)",
                 },
                 "body": {
                     "type": "string",
@@ -502,4 +611,7 @@ def register_handlers() -> dict:
         "o365_summarize_calendar": summarize_calendar,
         "o365_list_onedrive": list_onedrive,
         "o365_list_sharepoint": list_sharepoint,
+        "norman_list_emails": norman_list_emails,
+        "norman_read_email": norman_read_email,
+        "norman_reply_email": norman_reply_email,
     }

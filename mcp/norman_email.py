@@ -1,8 +1,11 @@
-"""Norman's service email — sends mail via SMTP AUTH (Office 365).
+"""Norman's service email — SMTP for sending, O365 client credentials for inbox.
 
 Used as the default sender for all agent-initiated emails.
 User's own O365 OAuth account is used only when they explicitly
 ask to send "from my account" or "on my behalf".
+
+Norman's inbox is accessed via O365 client credentials flow (Application
+permissions: Mail.Read, Mail.ReadWrite, Mail.Send).
 """
 
 import os
@@ -18,8 +21,12 @@ log = logging.getLogger("norman_email")
 
 SMTP_HOST = "smtp.office365.com"
 SMTP_PORT = 587
+NORMAN_ADDRESS = "norman@cobblestonefruit.com"
 
 _EXPORTS_DIR = Path(__file__).resolve().parent / "exports"
+
+# Cached O365 Account for Norman (client credentials — no user interaction)
+_norman_account = None
 
 
 def _get_credentials() -> tuple[str, str]:
@@ -31,6 +38,47 @@ def _get_credentials() -> tuple[str, str]:
 def is_configured() -> bool:
     email, password = _get_credentials()
     return bool(email and password)
+
+
+def get_account():
+    """Get an authenticated O365 Account for Norman using client credentials.
+
+    Uses the same Azure app (O365_CLIENT_ID / O365_CLIENT_SECRET) with
+    Application permissions to access Norman's mailbox.
+    Returns an Account or None.
+    """
+    global _norman_account
+
+    if _norman_account and _norman_account.is_authenticated:
+        return _norman_account
+
+    from O365 import Account
+
+    client_id = os.getenv("O365_CLIENT_ID", "")
+    client_secret = os.getenv("O365_CLIENT_SECRET", "")
+    tenant_id = os.getenv("O365_TENANT_ID", "")
+
+    if not client_id or not client_secret or not tenant_id:
+        log.warning("O365 app credentials not configured — Norman inbox unavailable")
+        return None
+
+    try:
+        account = Account(
+            (client_id, client_secret),
+            auth_flow_type="credentials",
+            tenant_id=tenant_id,
+            main_resource=NORMAN_ADDRESS,
+        )
+        if account.authenticate():
+            _norman_account = account
+            log.info("Norman O365 client credentials authenticated")
+            return account
+        else:
+            log.error("Norman O365 client credentials auth returned False")
+            return None
+    except Exception as e:
+        log.error(f"Norman O365 client credentials auth failed: {e}")
+        return None
 
 
 def send(
