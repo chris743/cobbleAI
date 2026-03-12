@@ -70,14 +70,14 @@ def delete_scheduled_report(params: dict) -> dict:
 
 # ── Cron helper examples for the agent ───────────────────────────────────────
 
-_CRON_EXAMPLES = """Common cron patterns:
-  "0 7 * * *"       = Every day at 7:00 AM
-  "0 7 * * 1-5"     = Weekdays at 7:00 AM
-  "0 7 * * 1"       = Every Monday at 7:00 AM
-  "0 8 1 * *"       = 1st of every month at 8:00 AM
-  "0 7,16 * * 1-5"  = Weekdays at 7 AM and 4 PM
+_CRON_EXAMPLES = """Common cron patterns (all times are Pacific / PST/PDT — conversion to UTC is automatic):
+  "0 7 * * *"       = Every day at 7:00 AM Pacific
+  "0 7 * * 1-5"     = Weekdays at 7:00 AM Pacific
+  "0 7 * * 1"       = Every Monday at 7:00 AM Pacific
+  "0 8 1 * *"       = 1st of every month at 8:00 AM Pacific
+  "0 7,16 * * 1-5"  = Weekdays at 7 AM and 4 PM Pacific
   "0 */4 * * *"     = Every 4 hours
-All times are UTC."""
+The user's times are always Pacific — do NOT convert to UTC, the system handles that."""
 
 
 TOOL_DEFINITIONS = [
@@ -97,7 +97,7 @@ TOOL_DEFINITIONS = [
                 },
                 "cron": {
                     "type": "string",
-                    "description": "Cron expression for when to run (e.g. '0 7 * * *' for daily at 7 AM UTC)"
+                    "description": "Cron expression for when to run in Pacific time (e.g. '0 7 * * *' for daily at 7 AM Pacific)"
                 },
                 "recipients": {
                     "type": "array",

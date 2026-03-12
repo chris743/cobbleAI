@@ -43,6 +43,11 @@ export default function ChatLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [o365Status, setO365Status] = useState({ configured: false, connected: false })
 
+  // Scheduled reports state
+  const [scheduledReports, setScheduledReports] = useState([])
+  const [reportsModalOpen, setReportsModalOpen] = useState(false)
+  const [editingReport, setEditingReport] = useState(null)
+
   const chatRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -94,6 +99,66 @@ export default function ChatLayout() {
       console.error('Failed to load O365 status:', e)
     }
   }, [])
+
+  // Load scheduled reports
+  const loadScheduledReports = useCallback(async () => {
+    try {
+      const data = await apiGet('/scheduled-reports')
+      setScheduledReports(data.schedules || [])
+    } catch (e) {
+      console.error('Failed to load scheduled reports:', e)
+    }
+  }, [])
+
+  // Edit a scheduled report — fetch full details (includes SQL)
+  const startEditReport = async (report) => {
+    try {
+      const data = await apiGet(`/scheduled-reports/${report.schedule_id}`)
+      setEditingReport(data.schedule)
+    } catch (e) {
+      console.error('Failed to load report for editing:', e)
+    }
+  }
+
+  // Save report edits
+  const saveReport = async () => {
+    if (!editingReport) return
+    try {
+      await apiPut(`/scheduled-reports/${editingReport.schedule_id}`, {
+        name: editingReport.name,
+        cron: editingReport.cron,
+        recipients: editingReport.recipients,
+        format: editingReport.format,
+        subject: editingReport.subject,
+        enabled: editingReport.enabled,
+      })
+      setEditingReport(null)
+      loadScheduledReports()
+    } catch (e) {
+      console.error('Failed to update report:', e)
+    }
+  }
+
+  // Delete a scheduled report
+  const deleteReport = async (scheduleId) => {
+    if (!window.confirm('Delete this scheduled report? This is permanent.')) return
+    try {
+      await apiDelete(`/scheduled-reports/${scheduleId}`)
+      loadScheduledReports()
+    } catch (e) {
+      console.error('Failed to delete report:', e)
+    }
+  }
+
+  // Toggle report enabled/disabled
+  const toggleReport = async (report) => {
+    try {
+      await apiPut(`/scheduled-reports/${report.schedule_id}`, { enabled: !report.enabled })
+      loadScheduledReports()
+    } catch (e) {
+      console.error('Failed to toggle report:', e)
+    }
+  }
 
   // O365 connect via popup
   const connectO365 = async () => {
@@ -148,7 +213,8 @@ export default function ChatLayout() {
     loadLivingDocs()
     loadCustomerSpecs()
     loadO365Status()
-  }, [loadConversations, loadLivingDocs, loadCustomerSpecs, loadO365Status])
+    loadScheduledReports()
+  }, [loadConversations, loadLivingDocs, loadCustomerSpecs, loadO365Status, loadScheduledReports])
 
   // Scroll to bottom
   useEffect(() => {
@@ -400,6 +466,8 @@ export default function ChatLayout() {
         onSelectLivingDoc={openLivingDoc}
         customerSpecs={customerSpecs}
         onDeleteSpec={deleteCustomerSpec}
+        scheduledReportCount={scheduledReports.filter(r => r.enabled).length}
+        onOpenScheduledReports={() => { setReportsModalOpen(true); loadScheduledReports() }}
       />
 
       {/* Mobile backdrop */}
@@ -632,6 +700,160 @@ export default function ChatLayout() {
 
             <div className="modal-actions">
               <button className="modal-btn modal-btn-secondary" onClick={() => setSettingsOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scheduled Reports modal */}
+      {reportsModalOpen && (
+        <div className="modal-overlay" onClick={() => setReportsModalOpen(false)}>
+          <div className="modal reports-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Scheduled Reports</h3>
+            <p className="reports-subtitle">
+              Reports created via chat are listed here. Ask Norman to schedule a new report.
+            </p>
+
+            {scheduledReports.length === 0 ? (
+              <div className="reports-empty">
+                No scheduled reports yet. Try asking Norman something like:<br />
+                <em>"Email bin inventories to me every morning at 7am"</em>
+              </div>
+            ) : (
+              <div className="reports-list">
+                {scheduledReports.map((r) => (
+                  <div key={r.schedule_id} className={`report-card ${r.enabled ? '' : 'report-disabled'}`}>
+                    <div className="report-card-header">
+                      <span className="report-name">{r.name}</span>
+                      <span className={`report-status ${r.enabled ? 'active' : 'paused'}`}>
+                        {r.enabled ? 'Active' : 'Paused'}
+                      </span>
+                    </div>
+                    <div className="report-details">
+                      <div className="report-detail">
+                        <span className="report-detail-label">Schedule:</span>
+                        <code>{r.cron}</code>
+                      </div>
+                      <div className="report-detail">
+                        <span className="report-detail-label">Next run:</span>
+                        {r.next_run_pacific || 'N/A'}
+                      </div>
+                      <div className="report-detail">
+                        <span className="report-detail-label">Recipients:</span>
+                        {r.recipients?.join(', ')}
+                      </div>
+                      <div className="report-detail">
+                        <span className="report-detail-label">Format:</span>
+                        {(r.format || 'xlsx').toUpperCase()}
+                      </div>
+                      {r.last_status && (
+                        <div className="report-detail">
+                          <span className="report-detail-label">Last run:</span>
+                          <span className={r.last_status.startsWith('OK') ? 'report-ok' : 'report-error'}>
+                            {r.last_run_pacific} — {r.last_status}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="report-actions">
+                      <button
+                        className="modal-btn modal-btn-secondary"
+                        onClick={() => toggleReport(r)}
+                      >
+                        {r.enabled ? 'Pause' : 'Resume'}
+                      </button>
+                      <button
+                        className="modal-btn modal-btn-secondary"
+                        onClick={() => startEditReport(r)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="modal-btn modal-btn-danger"
+                        onClick={() => deleteReport(r.schedule_id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button className="modal-btn modal-btn-secondary" onClick={() => setReportsModalOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit scheduled report modal */}
+      {editingReport && (
+        <div className="modal-overlay" onClick={() => setEditingReport(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Edit Scheduled Report</h3>
+            <label className="modal-label">
+              Name
+              <input
+                className="modal-input"
+                value={editingReport.name}
+                onChange={(e) => setEditingReport({ ...editingReport, name: e.target.value })}
+              />
+            </label>
+            <label className="modal-label">
+              Cron Schedule <small style={{ opacity: 0.6 }}>(Pacific time)</small>
+              <input
+                className="modal-input"
+                value={editingReport.cron}
+                onChange={(e) => setEditingReport({ ...editingReport, cron: e.target.value })}
+                placeholder="0 7 * * *"
+              />
+              <small className="modal-hint">
+                Examples: <code>0 7 * * *</code> daily 7am &middot; <code>0 7 * * 1-5</code> weekdays 7am &middot; <code>0 8 1 * *</code> 1st of month 8am
+              </small>
+            </label>
+            <label className="modal-label">
+              Recipients <small style={{ opacity: 0.6 }}>(comma-separated)</small>
+              <input
+                className="modal-input"
+                value={editingReport.recipients?.join(', ') || ''}
+                onChange={(e) => setEditingReport({
+                  ...editingReport,
+                  recipients: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                })}
+              />
+            </label>
+            <label className="modal-label">
+              Format
+              <select
+                className="modal-input"
+                value={editingReport.format || 'xlsx'}
+                onChange={(e) => setEditingReport({ ...editingReport, format: e.target.value })}
+              >
+                <option value="xlsx">Excel (.xlsx)</option>
+                <option value="pdf">PDF</option>
+              </select>
+            </label>
+            <label className="modal-label">
+              Email Subject
+              <input
+                className="modal-input"
+                value={editingReport.subject || ''}
+                onChange={(e) => setEditingReport({ ...editingReport, subject: e.target.value })}
+              />
+            </label>
+            <label className="modal-label">
+              <input
+                type="checkbox"
+                checked={editingReport.enabled}
+                onChange={(e) => setEditingReport({ ...editingReport, enabled: e.target.checked })}
+                style={{ marginRight: 8 }}
+              />
+              Enabled
+            </label>
+            <div className="modal-actions">
+              <button className="modal-btn modal-btn-secondary" onClick={() => setEditingReport(null)}>Cancel</button>
+              <button className="modal-btn modal-btn-primary" onClick={saveReport}>Save</button>
             </div>
           </div>
         </div>

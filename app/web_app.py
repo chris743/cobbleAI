@@ -369,6 +369,46 @@ def o365_disconnect():
     return jsonify({"ok": True})
 
 
+# ── Scheduled Reports ────────────────────────────────────────────────────────
+
+import report_scheduler
+
+
+@app.route("/scheduled-reports", methods=["GET"])
+@require_auth
+def list_scheduled_reports():
+    result = report_scheduler.list_schedules(request.clerk_user_id)
+    return jsonify(result)
+
+
+@app.route("/scheduled-reports/<schedule_id>", methods=["GET"])
+@require_auth
+def get_scheduled_report(schedule_id):
+    result = report_scheduler.get_schedule(request.clerk_user_id, schedule_id)
+    if not result.get("success"):
+        abort(404)
+    return jsonify(result)
+
+
+@app.route("/scheduled-reports/<schedule_id>", methods=["PUT"])
+@require_auth
+def update_scheduled_report(schedule_id):
+    data = request.get_json()
+    result = report_scheduler.update_schedule(request.clerk_user_id, schedule_id, **data)
+    if not result.get("success"):
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+@app.route("/scheduled-reports/<schedule_id>", methods=["DELETE"])
+@require_auth
+def delete_scheduled_report(schedule_id):
+    result = report_scheduler.delete_schedule(request.clerk_user_id, schedule_id)
+    if not result.get("success"):
+        abort(404)
+    return jsonify(result)
+
+
 # ── File downloads (proxied from MCP server) ─────────────────────────────────
 
 import requests as _requests

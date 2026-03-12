@@ -13,6 +13,8 @@ export default function Sidebar({
   onSelectLivingDoc,
   customerSpecs,
   onDeleteSpec,
+  scheduledReportCount,
+  onOpenScheduledReports,
 }) {
   const [tab, setTab] = useState('chat')
 
@@ -79,6 +81,16 @@ export default function Sidebar({
               ))}
             </div>
           )}
+
+          <div className="sidebar-section">
+            <button className="scheduled-reports-btn" onClick={onOpenScheduledReports}>
+              <span className="scheduled-reports-icon">&#x1F4C5;</span>
+              Scheduled Reports
+              {scheduledReportCount > 0 && (
+                <span className="scheduled-reports-badge">{scheduledReportCount}</span>
+              )}
+            </button>
+          </div>
 
           <div className="sidebar-section">
             {(livingDocs && livingDocs.length > 0) && (

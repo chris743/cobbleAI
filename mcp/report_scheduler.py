@@ -6,15 +6,19 @@ and emails the file via O365.
 
 Schedules are per-user (scoped by clerk_user_id) so each user's O365 tokens
 are used for sending.
+
+All user-facing times are in Pacific (PST/PDT). Cron expressions are stored
+as-entered (Pacific) and converted to UTC at evaluation time.
 """
 
 import logging
 import os
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from croniter import croniter
+from zoneinfo import ZoneInfo
 
 from db import _get_db
 import o365_auth
@@ -22,6 +26,29 @@ import o365_auth
 log = logging.getLogger("report_scheduler")
 
 _COLLECTION = "report_schedules"
+_PACIFIC = ZoneInfo("America/Los_Angeles")
+_UTC = ZoneInfo("UTC")
+
+
+def _next_run_utc(cron_expr: str) -> datetime:
+    """Compute the next run time in UTC from a Pacific-time cron expression."""
+    now_pac = datetime.now(_PACIFIC)
+    # croniter works in naive datetimes, so strip tz for calculation
+    next_pac_naive = croniter(cron_expr, now_pac.replace(tzinfo=None)).get_next(datetime)
+    # Localize to Pacific, then convert to UTC, then strip tz for MongoDB
+    next_pac = next_pac_naive.replace(tzinfo=_PACIFIC)
+    next_utc = next_pac.astimezone(_UTC)
+    return next_utc.replace(tzinfo=None)
+
+
+def _utc_to_pacific_str(dt) -> str:
+    """Format a UTC datetime as a Pacific time string for display."""
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_UTC)
+    pac = dt.astimezone(_PACIFIC)
+    return pac.strftime("%Y-%m-%d %I:%M %p %Z")
 
 
 # ── Schedule CRUD ────────────────────────────────────────────────────────────
@@ -30,7 +57,7 @@ def create_schedule(user_id: str, name: str, sql: str, cron: str,
                     recipients: list[str], format: str = "xlsx",
                     subject: str = "", body: str = "", database: str = None,
                     template: str = None, template_params: dict = None) -> dict:
-    """Create a new scheduled report."""
+    """Create a new scheduled report. Cron expression is in Pacific time."""
     if not croniter.is_valid(cron):
         return {"success": False, "error": f"Invalid cron expression: {cron}"}
 
@@ -44,7 +71,7 @@ def create_schedule(user_id: str, name: str, sql: str, cron: str,
         return {"success": False, "error": "Either sql or template is required"}
 
     now = datetime.utcnow()
-    next_run = croniter(cron, now).get_next(datetime)
+    next_run = _next_run_utc(cron)
 
     doc = {
         "user_id": user_id,
@@ -74,7 +101,8 @@ def create_schedule(user_id: str, name: str, sql: str, cron: str,
         "name": name,
         "cron": cron,
         "next_run": next_run.isoformat(),
-        "message": f"Schedule created: '{name}' — next run at {next_run.strftime('%Y-%m-%d %H:%M')} UTC"
+        "next_run_pacific": _utc_to_pacific_str(next_run),
+        "message": f"Schedule created: '{name}' — next run at {_utc_to_pacific_str(next_run)}"
     }
 
 
@@ -93,13 +121,49 @@ def list_schedules(user_id: str) -> dict:
             "cron": doc.get("cron", ""),
             "recipients": doc.get("recipients", []),
             "format": doc.get("format", "xlsx"),
+            "subject": doc.get("subject", ""),
+            "database": doc.get("database", "DM03"),
             "enabled": doc.get("enabled", True),
             "next_run": doc.get("next_run", "").isoformat() if doc.get("next_run") else None,
+            "next_run_pacific": _utc_to_pacific_str(doc.get("next_run")),
             "last_run": doc.get("last_run", "").isoformat() if doc.get("last_run") else None,
+            "last_run_pacific": _utc_to_pacific_str(doc.get("last_run")),
             "last_status": doc.get("last_status"),
         })
 
     return {"success": True, "schedules": schedules, "count": len(schedules)}
+
+
+def get_schedule(user_id: str, schedule_id: str) -> dict:
+    """Get a single schedule by ID (includes SQL for editing)."""
+    from bson import ObjectId
+
+    doc = _get_db()[_COLLECTION].find_one(
+        {"_id": ObjectId(schedule_id), "user_id": user_id}
+    )
+    if not doc:
+        return {"success": False, "error": "Schedule not found"}
+
+    return {
+        "success": True,
+        "schedule": {
+            "schedule_id": str(doc["_id"]),
+            "name": doc.get("name", ""),
+            "sql": doc.get("sql", ""),
+            "cron": doc.get("cron", ""),
+            "recipients": doc.get("recipients", []),
+            "format": doc.get("format", "xlsx"),
+            "subject": doc.get("subject", ""),
+            "body": doc.get("body", ""),
+            "database": doc.get("database", "DM03"),
+            "enabled": doc.get("enabled", True),
+            "next_run": doc.get("next_run", "").isoformat() if doc.get("next_run") else None,
+            "next_run_pacific": _utc_to_pacific_str(doc.get("next_run")),
+            "last_run": doc.get("last_run", "").isoformat() if doc.get("last_run") else None,
+            "last_run_pacific": _utc_to_pacific_str(doc.get("last_run")),
+            "last_status": doc.get("last_status"),
+        },
+    }
 
 
 def update_schedule(user_id: str, schedule_id: str, **updates) -> dict:
@@ -113,8 +177,7 @@ def update_schedule(user_id: str, schedule_id: str, **updates) -> dict:
     if "cron" in filtered:
         if not croniter.is_valid(filtered["cron"]):
             return {"success": False, "error": f"Invalid cron expression: {filtered['cron']}"}
-        now = datetime.utcnow()
-        filtered["next_run"] = croniter(filtered["cron"], now).get_next(datetime)
+        filtered["next_run"] = _next_run_utc(filtered["cron"])
 
     result = _get_db()[_COLLECTION].update_one(
         {"_id": ObjectId(schedule_id), "user_id": user_id},
@@ -216,7 +279,7 @@ def _execute_report(schedule: dict):
     # Update last_run and advance next_run
     now = datetime.utcnow()
     cron = schedule.get("cron", "0 7 * * *")
-    next_run = croniter(cron, now).get_next(datetime)
+    next_run = _next_run_utc(cron)
 
     _get_db()[_COLLECTION].update_one(
         {"_id": schedule_id},
