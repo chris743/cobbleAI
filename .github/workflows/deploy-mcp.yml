@@ -1,0 +1,21 @@
+name: Deploy MCP Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mcp/**'
+      - '.github/workflows/deploy-mcp.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # TODO: Add deployment steps for norman-local (compute machine)
+      # - SSH to norman-local
+      # - Pull latest code
+      # - pip install -r mcp/requirements.txt
+      # - Restart MCP server service
+      - run: echo "Deploy MCP server — configure deployment target"

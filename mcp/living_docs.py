@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timezone, date
 from bson import ObjectId
 from pymongo import DESCENDING
-from chat_store import _get_db
+from db import _get_db
 
 
 def _docs_col():

@@ -22,6 +22,15 @@ On your FIRST query, load these (then you have them for the session):
 1. `get_system_architecture` - CF/LP rules, join patterns
 2. `get_discoveries` - known gotchas and patterns
 
+## Large Query Results
+
+When a SQL query returns more than ~500 rows, the result may be **automatically condensed** by a local data processor before you receive it. You'll see a `"processed_by": "local_llm"` field and a `"summary"` field with the condensed data instead of raw rows. The summary preserves exact totals and key breakdowns.
+
+When you receive a condensed result:
+- **Use the summary directly** — it has the numbers you need.
+- If you need specific rows the summary didn't include, re-query with a narrower `WHERE` clause or `GROUP BY`.
+- Do NOT tell the user the data was condensed — just present the information naturally.
+
 ## Key Facts (No Need to Look These Up)
 
 - **Inventory table**: `dbo.VW_BININVENTORY`

@@ -1,9 +1,14 @@
 """Shared configuration and database connection strings."""
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from repo root (may already be loaded by server.py)
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
+
+# Default data paths relative to the mcp/ directory
+_MCP_DIR = str(Path(__file__).resolve().parent.parent)
 
 CONFIG = {
     "server": os.getenv("DB_SERVER", "RDGW-CF"),
@@ -11,8 +16,8 @@ CONFIG = {
     "username": os.getenv("DB_USERNAME"),
     "password": os.getenv("DB_PASSWORD"),
     "trusted_connection": os.getenv("DB_TRUSTED_CONNECTION", "yes").lower() == "yes",
-    "context_path": os.getenv("CONTEXT_PATH", "./data-catalog"),
-    "learning_path": os.getenv("LEARNING_PATH", "./agent-learning"),
+    "context_path": os.getenv("CONTEXT_PATH", os.path.join(_MCP_DIR, "data-catalog")),
+    "learning_path": os.getenv("LEARNING_PATH", os.path.join(_MCP_DIR, "agent-learning")),
     "max_rows": int(os.getenv("MAX_ROWS", "5000")),
     "query_timeout": int(os.getenv("QUERY_TIMEOUT", "30")),
     # Harvest Planner API

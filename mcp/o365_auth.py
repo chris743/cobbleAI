@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from O365 import Account
 from O365.utils import BaseTokenBackend
 
-from chat_store import _get_db
+from db import _get_db
 
 
 # ── MongoDB token backend ────────────────────────────────────────────────────

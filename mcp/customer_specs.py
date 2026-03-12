@@ -8,7 +8,7 @@ during production scheduling and size substitution analysis.
 
 from datetime import datetime, timezone
 from bson import ObjectId
-from chat_store import _get_db
+from db import _get_db
 
 
 def _col():

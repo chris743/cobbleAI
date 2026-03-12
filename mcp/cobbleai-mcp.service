@@ -1,13 +1,13 @@
 [Unit]
-Description=CobbleAI Backend API
+Description=CobbleAI MCP Tool Server
 After=network.target
 
 [Service]
 Type=simple
 User=administrator
-WorkingDirectory=/home/administrator/cobbleai
+WorkingDirectory=/home/administrator/cobbleai/mcp
 EnvironmentFile=/home/administrator/cobbleai/.env
-ExecStart=/home/administrator/cobbleai/venv/bin/python web_app.py
+ExecStart=/home/administrator/cobbleai/venv/bin/python server.py
 Restart=on-failure
 RestartSec=5
 

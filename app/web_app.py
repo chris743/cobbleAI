@@ -11,13 +11,19 @@ Usage:
 """
 
 import os
+import sys
 import uuid
 import logging
 from datetime import date as _date
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env before importing agent (which initializes the Anthropic client at import time)
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+# Load .env from repo root
+_root = Path(__file__).resolve().parent.parent
+load_dotenv(_root / ".env")
+
+# Add mcp/ to path so we can import living_docs, customer_specs, o365_auth
+sys.path.insert(0, str(_root / "mcp"))
 
 from flask import Flask, render_template, request, jsonify, send_from_directory, abort, Response
 from flask_cors import CORS
@@ -365,7 +371,7 @@ def o365_disconnect():
 
 # ── File downloads ────────────────────────────────────────────────────────────
 
-EXPORTS_DIR = os.path.join(os.path.dirname(__file__), "exports")
+EXPORTS_DIR = str(_root / "mcp" / "exports")
 
 
 _DOWNLOAD_MIMETYPES = {

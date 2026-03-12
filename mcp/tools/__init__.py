@@ -1,15 +1,17 @@
 """
-DM03 Data Warehouse Agent Tools
-================================
+CobbleAI MCP Tool Server — Tool Definitions
+=============================================
 Tool framework for AI agents to query and learn from the data warehouse.
 
 Usage:
-    from agent_tools import AgentToolkit
+    from tools import AgentToolkit
 
     toolkit = AgentToolkit()
     tools = toolkit.get_tool_definitions()
     result = toolkit.handle_tool_call("execute_sql", {"sql": "SELECT ..."})
 """
+
+from pathlib import Path
 
 from .query_executor import QueryExecutor, TOOL_DEFINITIONS as _query_defs, register_handlers as _query_handlers
 from .context_loader import ContextLoader, TOOL_DEFINITIONS as _context_defs, register_handlers as _context_handlers
@@ -19,6 +21,10 @@ from .harvest_planner import HarvestPlannerAPI, TOOL_DEFINITIONS as _hp_defs, re
 from .living_documents import TOOL_DEFINITIONS as _ld_defs, register_handlers as _ld_handlers
 from .pdf_exporter import PDFExporter, TOOL_DEFINITIONS as _pdf_defs, register_handlers as _pdf_handlers
 from .o365_tools import TOOL_DEFINITIONS as _o365_defs, register_handlers as _o365_handlers
+
+# Absolute path to mcp/ directory for resolving data paths
+_MCP_DIR = Path(__file__).resolve().parent.parent
+_EXPORTS = str(_MCP_DIR / "exports")
 
 
 class AgentToolkit:
@@ -31,9 +37,9 @@ class AgentToolkit:
         self.executor = QueryExecutor()
         self.context = ContextLoader()
         self.learning = LearningManager()
-        self.exporter = ExcelExporter()
+        self.exporter = ExcelExporter(export_path=_EXPORTS)
         self.harvest_planner = HarvestPlannerAPI()
-        self.pdf_exporter = PDFExporter()
+        self.pdf_exporter = PDFExporter(export_path=_EXPORTS)
 
     def get_tool_definitions(self) -> list[dict]:
         """Return tool definitions for LLM function calling."""

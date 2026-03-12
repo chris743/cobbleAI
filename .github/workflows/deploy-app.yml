@@ -1,0 +1,21 @@
+name: Deploy App Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/deploy-app.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # TODO: Add deployment steps for the app server
+      # - SSH to app machine
+      # - Pull latest code
+      # - pip install -r app/requirements.txt
+      # - Restart gunicorn service
+      - run: echo "Deploy app server — configure deployment target"

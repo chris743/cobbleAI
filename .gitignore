@@ -1,11 +1,18 @@
 .env
 venv/
-exports/
 __pycache__/
 *.pyc
 
+# Exports (generated files)
+mcp/exports/
+
 # Frontend
-norman_frontend/node_modules/
-norman_frontend/dist/
-norman_frontend/dist-ssr/
-norman_frontend/*.local
+app/frontend/node_modules/
+app/frontend/dist/
+app/frontend/dist-ssr/
+app/frontend/*.local
+
+# Legacy (can be removed after full migration)
+norman_frontend/
+agent_tools/
+exports/
