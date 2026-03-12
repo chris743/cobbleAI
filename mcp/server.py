@@ -28,6 +28,7 @@ import uvicorn
 from tools import AgentToolkit
 from tools.user_context import set_user_id
 import data_processor
+import report_scheduler
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("mcp_server")
@@ -147,5 +148,6 @@ app = Starlette(
 
 
 if __name__ == "__main__":
+    report_scheduler.start()
     log.info(f"Starting MCP server on http://0.0.0.0:{MCP_PORT}/sse")
     uvicorn.run(app, host="0.0.0.0", port=MCP_PORT, log_level="info")

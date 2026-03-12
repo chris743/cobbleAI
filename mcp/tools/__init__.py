@@ -21,6 +21,7 @@ from .harvest_planner import HarvestPlannerAPI, TOOL_DEFINITIONS as _hp_defs, re
 from .living_documents import TOOL_DEFINITIONS as _ld_defs, register_handlers as _ld_handlers
 from .pdf_exporter import PDFExporter, TOOL_DEFINITIONS as _pdf_defs, register_handlers as _pdf_handlers
 from .o365_tools import TOOL_DEFINITIONS as _o365_defs, register_handlers as _o365_handlers
+from .report_scheduler import TOOL_DEFINITIONS as _sched_defs, register_handlers as _sched_handlers
 
 # Absolute path to mcp/ directory for resolving data paths
 _MCP_DIR = Path(__file__).resolve().parent.parent
@@ -52,6 +53,7 @@ class AgentToolkit:
             + _ld_defs
             + _pdf_defs
             + _o365_defs
+            + _sched_defs
         )
 
     def handle_tool_call(self, tool_name: str, parameters: dict) -> dict:
@@ -65,6 +67,7 @@ class AgentToolkit:
         handlers.update(_ld_handlers())
         handlers.update(_pdf_handlers(self.pdf_exporter))
         handlers.update(_o365_handlers())
+        handlers.update(_sched_handlers())
 
         handler = handlers.get(tool_name)
         if not handler:
