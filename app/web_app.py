@@ -25,7 +25,7 @@ load_dotenv(_root / ".env")
 # Add mcp/ to path so we can import living_docs, customer_specs, o365_auth
 sys.path.insert(0, str(_root / "mcp"))
 
-from flask import Flask, render_template, request, jsonify, send_from_directory, abort, Response
+from flask import Flask, render_template, request, jsonify, abort, Response
 from flask_cors import CORS
 from agent_claude import run_agent_turn, run_agent_turn_streaming
 from auth import require_auth
@@ -369,28 +369,34 @@ def o365_disconnect():
     return jsonify({"ok": True})
 
 
-# ── File downloads ────────────────────────────────────────────────────────────
+# ── File downloads (proxied from MCP server) ─────────────────────────────────
 
-EXPORTS_DIR = str(_root / "mcp" / "exports")
+import requests as _requests
 
-
-_DOWNLOAD_MIMETYPES = {
-    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ".pdf": "application/pdf",
-}
+_MCP_BASE = os.getenv("MCP_URL", "http://127.0.0.1:9000/sse").rsplit("/sse", 1)[0]
 
 
 @app.route("/download/<filename>")
 @require_auth
 def download_file(filename):
     # Block path traversal
-    if "/" in filename or "\\" in filename:
+    if "/" in filename or "\\" in filename or ".." in filename:
         abort(404)
     ext = os.path.splitext(filename)[1].lower()
-    mimetype = _DOWNLOAD_MIMETYPES.get(ext)
-    if not mimetype:
+    if ext not in (".xlsx", ".pdf"):
         abort(404)
-    return send_from_directory(EXPORTS_DIR, filename, as_attachment=True, mimetype=mimetype)
+    try:
+        r = _requests.get(f"{_MCP_BASE}/download/{filename}", timeout=30)
+        r.raise_for_status()
+    except Exception:
+        abort(404)
+    return Response(
+        r.content,
+        headers={
+            "Content-Type": r.headers.get("content-type", "application/octet-stream"),
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 if __name__ == "__main__":

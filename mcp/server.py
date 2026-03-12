@@ -22,7 +22,7 @@ from mcp.server.lowlevel import Server, NotificationOptions
 from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
-from starlette.responses import Response
+from starlette.responses import Response, FileResponse
 import uvicorn
 
 from tools import AgentToolkit
@@ -113,14 +113,39 @@ async def handle_sse(request):
     return Response()
 
 
+EXPORTS_DIR = Path(__file__).resolve().parent / "exports"
+
+_DOWNLOAD_MIMETYPES = {
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pdf": "application/pdf",
+}
+
+
+async def handle_download(request):
+    """Serve exported files (Excel/PDF) from mcp/exports/."""
+    filename = request.path_params["filename"]
+    # Block path traversal
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return Response("Not found", status_code=404)
+    ext = os.path.splitext(filename)[1].lower()
+    mimetype = _DOWNLOAD_MIMETYPES.get(ext)
+    if not mimetype:
+        return Response("Not found", status_code=404)
+    filepath = EXPORTS_DIR / filename
+    if not filepath.is_file():
+        return Response("Not found", status_code=404)
+    return FileResponse(filepath, media_type=mimetype, filename=filename)
+
+
 app = Starlette(
     routes=[
         Route("/sse", endpoint=handle_sse),
         Mount("/messages/", app=sse.handle_post_message),
+        Route("/download/{filename}", endpoint=handle_download),
     ],
 )
 
 
 if __name__ == "__main__":
-    log.info(f"Starting MCP server on http://127.0.0.1:{MCP_PORT}/sse")
-    uvicorn.run(app, host="127.0.0.1", port=MCP_PORT, log_level="info")
+    log.info(f"Starting MCP server on http://0.0.0.0:{MCP_PORT}/sse")
+    uvicorn.run(app, host="0.0.0.0", port=MCP_PORT, log_level="info")

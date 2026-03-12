@@ -29,7 +29,8 @@ VLLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "Qwen/Qwen3-32B")
 ROW_THRESHOLD = int(os.getenv("LOCAL_LLM_ROW_THRESHOLD", "500"))
 CHAR_THRESHOLD = int(os.getenv("LOCAL_LLM_CHAR_THRESHOLD", "50000"))
 TIMEOUT = int(os.getenv("LOCAL_LLM_TIMEOUT", "90"))
-MAX_INPUT_ROWS = int(os.getenv("LOCAL_LLM_MAX_INPUT_ROWS", "300"))
+MAX_INPUT_ROWS = int(os.getenv("LOCAL_LLM_MAX_INPUT_ROWS", "150"))
+MAX_PROMPT_CHARS = int(os.getenv("LOCAL_LLM_MAX_PROMPT_CHARS", "55000"))  # ~20K tokens, leaves room for 4K output within 32K context
 
 _client = httpx.Client(base_url=VLLM_BASE_URL, timeout=TIMEOUT)
 
@@ -116,7 +117,7 @@ def _call_vllm(prompt: str) -> str:
             },
             {"role": "user", "content": prompt},
         ],
-        "max_tokens": 2048,
+        "max_tokens": 4096,
         "temperature": 0.1,
     })
     response.raise_for_status()
@@ -165,7 +166,14 @@ def _build_prompt(user_question: str, sql: str, columns: list,
     if remainder > 0:
         parts.append(f"... plus {remainder} more rows not shown.")
 
-    return "\n\n".join(parts)
+    prompt = "\n\n".join(parts)
+
+    # Hard cap to stay within Qwen3-32B's 32K context (~2.7 chars/token)
+    if len(prompt) > MAX_PROMPT_CHARS:
+        log.info(f"Prompt too long ({len(prompt)} chars), truncating to {MAX_PROMPT_CHARS}")
+        prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n... [data truncated to fit context window]"
+
+    return prompt
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
