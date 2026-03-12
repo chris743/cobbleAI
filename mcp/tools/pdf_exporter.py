@@ -16,12 +16,28 @@ _DARK_TEXT = (30, 30, 30)
 _GRAY_TEXT = (100, 100, 100)
 _LIGHT_GRAY = (200, 200, 200)
 
+# Regex to strip emoji and other non-latin-1 symbols
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"  # misc symbols, emoticons, etc.
+    "\U00002702-\U000027B0"  # dingbats
+    "\U0000FE00-\U0000FE0F"  # variation selectors
+    "\U0000200D"             # zero width joiner
+    "\U000020E3"             # combining enclosing keycap
+    "]+",
+    flags=re.UNICODE,
+)
+
 
 def _safe(text) -> str:
     """Sanitize text for latin-1 encoding (built-in fonts only support latin-1)."""
     if text is None:
         return ""
-    return str(text).encode("latin-1", "replace").decode("latin-1")
+    text = str(text)
+    # Strip emojis entirely (replacement chars cause width issues)
+    text = _EMOJI_RE.sub("", text)
+    # Encode remaining to latin-1, drop anything that still doesn't fit
+    return text.encode("latin-1", "ignore").decode("latin-1").strip()
 
 
 class _ReportPDF(FPDF):
@@ -68,14 +84,56 @@ class PDFExporter:
         return f"{safe_name}_{file_id}.pdf"
 
     def _add_text_block(self, pdf: _ReportPDF, text: str):
-        """Render a text block with basic markdown-like formatting."""
+        """Render a text block with basic markdown-like formatting.
+
+        Detects tab-separated or pipe-separated tables in the text and
+        renders them as proper PDF tables instead of plain text.
+        """
         pdf.set_text_color(*_DARK_TEXT)
-        for line in text.split("\n"):
-            stripped = line.strip()
+        lines = text.split("\n")
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip()
             if not stripped:
                 pdf.ln(4)
+                i += 1
                 continue
 
+            # Detect tabular blocks: 2+ consecutive lines with tabs or pipes
+            if "\t" in stripped or ("|" in stripped and stripped.count("|") >= 2):
+                table_lines = []
+                sep = "\t" if "\t" in stripped else "|"
+                while i < len(lines):
+                    s = lines[i].strip()
+                    if not s:
+                        break
+                    # Skip markdown table separator rows (---|---|---)
+                    if sep == "|" and re.match(r'^[\s|:-]+$', s):
+                        i += 1
+                        continue
+                    cells = [c.strip() for c in s.split(sep) if c.strip()]
+                    if len(cells) >= 2:
+                        table_lines.append(cells)
+                        i += 1
+                    else:
+                        break
+                if table_lines:
+                    # First row is header
+                    columns = table_lines[0]
+                    rows = table_lines[1:]
+                    if rows:
+                        self._add_table(pdf, columns, rows)
+                    else:
+                        # Single row — render as bold text
+                        pdf.set_font("Helvetica", "B", 10)
+                        pdf.multi_cell(0, 5, _safe("  ".join(columns)))
+                    continue
+                # Fall through if no valid table found
+
+            # Reset x to left margin before rendering any text
+            pdf.set_x(10)
+
+            # Headings
             if stripped.startswith("### "):
                 pdf.set_font("Helvetica", "B", 11)
                 pdf.set_text_color(*_GREEN)
@@ -99,37 +157,71 @@ class PDFExporter:
                 pdf.ln(3)
             elif stripped.startswith("- ") or stripped.startswith("* "):
                 pdf.set_font("Helvetica", "", 10)
-                x = pdf.get_x()
-                pdf.cell(6, 5, "-")
-                pdf.multi_cell(pdf.w - pdf.get_x() - 10, 5, _safe(stripped[2:]))
-                pdf.set_x(x)  # reset for next line
+                pdf.set_x(10)
+                pdf.multi_cell(pdf.w - 20, 5, _safe("  -  " + stripped[2:]))
             elif stripped.startswith("**") and stripped.endswith("**"):
                 pdf.set_font("Helvetica", "B", 10)
                 pdf.multi_cell(0, 5, _safe(stripped[2:-2]))
             else:
                 pdf.set_font("Helvetica", "", 10)
-                pdf.multi_cell(0, 5, _safe(_strip_md(stripped)))
+                try:
+                    pdf.multi_cell(0, 5, _safe(_strip_md(stripped)))
+                except Exception:
+                    # Fallback: truncate line to fit
+                    safe_text = _safe(_strip_md(stripped))[:120]
+                    pdf.cell(0, 5, safe_text)
+                    pdf.ln()
+            i += 1
 
     def _add_table(self, pdf: _ReportPDF, columns: list[str], rows: list[list]):
         """Render a data table."""
         if not columns or not rows:
             return
 
+        num_cols = len(columns)
         usable = pdf.w - 20
-        col_widths = []
-        for i, col in enumerate(columns):
-            max_len = len(str(col))
-            for row in rows[:50]:
-                if i < len(row):
-                    max_len = max(max_len, len(str(row[i] if row[i] is not None else "")))
-            col_widths.append(min(max_len, 40))
 
+        # Normalize rows to have same number of columns as header
+        norm_rows = []
+        for row in rows:
+            if len(row) < num_cols:
+                norm_rows.append(list(row) + [""] * (num_cols - len(row)))
+            else:
+                norm_rows.append(list(row[:num_cols]))
+
+        # Calculate column widths based on actual rendered text width
+        pdf.set_font("Helvetica", "B", 8)
+        col_widths = [pdf.get_string_width(_safe(str(c))) + 6 for c in columns]
+
+        pdf.set_font("Helvetica", "", 8)
+        for row in norm_rows[:50]:
+            for i in range(num_cols):
+                val = _safe(row[i]) if row[i] is not None else ""
+                w = pdf.get_string_width(val) + 6
+                col_widths[i] = max(col_widths[i], w)
+
+        # Cap individual columns and scale to fit usable width
+        col_widths = [min(w, usable * 0.4) for w in col_widths]
         total = sum(col_widths) or 1
-        col_widths = [w / total * usable for w in col_widths]
+        if total > usable:
+            # Shrink to fit
+            col_widths = [w / total * usable for w in col_widths]
+        elif total < usable * 0.6:
+            # Small table — expand gently but don't stretch across full page
+            col_widths = [w / total * usable * 0.75 for w in col_widths]
+        else:
+            # Medium table — fill the page width
+            col_widths = [w / total * usable for w in col_widths]
+
+        # Final safety: ensure sum never exceeds usable
+        final_total = sum(col_widths)
+        if final_total > usable:
+            col_widths = [w / final_total * usable for w in col_widths]
 
         row_height = 6
 
         def _draw_header():
+            pdf.set_x(10)
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_fill_color(*_GREEN)
             pdf.set_text_color(*_WHITE)
@@ -141,11 +233,12 @@ class PDFExporter:
 
         _draw_header()
 
-        for row_idx, row in enumerate(rows):
+        for row_idx, row in enumerate(norm_rows):
             if pdf.get_y() > pdf.h - 25:
                 pdf.add_page()
                 _draw_header()
 
+            pdf.set_x(10)
             if row_idx % 2 == 1:
                 pdf.set_fill_color(*_LIGHT_BG)
                 fill = True
@@ -153,7 +246,7 @@ class PDFExporter:
                 fill = False
 
             for i, col_w in enumerate(col_widths):
-                val = _safe(row[i]) if i < len(row) and row[i] is not None else ""
+                val = _safe(row[i]) if row[i] is not None else ""
                 while pdf.get_string_width(val) > col_w - 2 and len(val) > 1:
                     val = val[:-1]
                 pdf.cell(col_w, row_height, val, border=1, fill=fill)
@@ -612,7 +705,7 @@ def _strip_md(text: str) -> str:
 TOOL_DEFINITIONS = [
     {
         "name": "export_pdf",
-        "description": "Export a formatted PDF report. Use for professional-looking reports the user can print or email. Supports two modes: (1) Pass 'content' with markdown-like text for a text-heavy report. (2) Pass 'sections' array for structured reports with headings, text, and data tables. Each section can have a heading, text, and/or table (columns + rows). Returns a download link.",
+        "description": "Export a formatted PDF report. IMPORTANT: For any tabular data, ALWAYS use 'sections' with columns/rows arrays — do NOT put tables as text in 'content'. Use 'content' only for narrative text. Use 'sections' for structured data: each section can have a heading, text, and/or table (columns + rows). You can mix both — use 'content' for an intro and 'sections' for the data tables. Returns a download link.",
         "parameters": {
             "type": "object",
             "properties": {
