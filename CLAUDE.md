@@ -103,6 +103,8 @@ O365_CLIENT_ID=                             # optional Microsoft 365
 O365_CLIENT_SECRET=
 O365_TENANT_ID=
 O365_REDIRECT_URI=http://localhost:5000/o365/callback
+NORMAN_EMAIL=norman@cobblestonefruit.com    # Norman's service email (SMTP)
+NORMAN_PASSWORD=                            # Norman's email password
 ```
 
 ## Architecture

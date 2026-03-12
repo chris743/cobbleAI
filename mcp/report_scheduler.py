@@ -21,7 +21,7 @@ from croniter import croniter
 from zoneinfo import ZoneInfo
 
 from db import _get_db
-import o365_auth
+import norman_email
 
 log = logging.getLogger("report_scheduler")
 
@@ -255,19 +255,18 @@ def _execute_report(schedule: dict):
 
         file_id = export_result["file_id"]
 
-        # Email via O365
-        account = o365_auth.get_account(user_id)
-        if not account:
-            raise RuntimeError("O365 not connected for this user — cannot send email")
+        # Email via Norman's service account
+        if not norman_email.is_configured():
+            raise RuntimeError("Norman's email not configured (NORMAN_EMAIL / NORMAN_PASSWORD)")
 
-        mailbox = account.mailbox()
-        msg = mailbox.new_message()
-        msg.to.add(recipients)
-        msg.subject = subject
-        msg.body = body
-        filepath = Path(exports_dir) / file_id
-        msg.attachments.add(str(filepath))
-        msg.send()
+        result = norman_email.send(
+            to=recipients,
+            subject=subject,
+            body=body,
+            attachments=[file_id],
+        )
+        if not result.get("success"):
+            raise RuntimeError(result.get("error", "Email send failed"))
 
         status = f"OK — emailed {file_id} to {', '.join(recipients)}"
         log.info(f"Schedule '{name}' executed: {status}")

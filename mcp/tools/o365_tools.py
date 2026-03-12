@@ -106,6 +106,7 @@ def read_email(params: dict) -> dict:
 
 
 def reply_email(params: dict) -> dict:
+    """Reply to an email. Always uses the user's O365 account (replies must come from the original recipient)."""
     account = _get_account()
     if not account:
         return _not_connected()
@@ -133,14 +134,13 @@ def reply_email(params: dict) -> dict:
 
 
 def send_email(params: dict) -> dict:
-    account = _get_account()
-    if not account:
-        return _not_connected()
+    import norman_email
 
     to = params.get("to", [])
     subject = params.get("subject", "")
     body = params.get("body", "")
     attachments = params.get("attachments", [])
+    send_as_user = params.get("send_as_user", False)
 
     if not to or not subject or not body:
         return {"success": False, "error": "to, subject, and body are required"}
@@ -150,33 +150,48 @@ def send_email(params: dict) -> dict:
     if isinstance(attachments, str):
         attachments = [attachments]
 
-    # Resolve attachment file paths from export file IDs
-    resolved_files = []
-    for file_id in attachments:
-        # Block path traversal
-        if "/" in file_id or "\\" in file_id or ".." in file_id:
-            return {"success": False, "error": f"Invalid attachment filename: {file_id}"}
-        filepath = _EXPORTS_DIR / file_id
-        if not filepath.is_file():
-            return {"success": False, "error": f"Attachment not found: {file_id}"}
-        resolved_files.append(filepath)
+    # If user explicitly wants to send from their own account
+    if send_as_user:
+        account = _get_account()
+        if not account:
+            return _not_connected()
 
-    try:
-        mailbox = account.mailbox()
-        msg = mailbox.new_message()
-        msg.to.add(to)
-        msg.subject = subject
-        msg.body = body
+        resolved_files = []
+        for file_id in attachments:
+            if "/" in file_id or "\\" in file_id or ".." in file_id:
+                return {"success": False, "error": f"Invalid attachment filename: {file_id}"}
+            filepath = _EXPORTS_DIR / file_id
+            if not filepath.is_file():
+                return {"success": False, "error": f"Attachment not found: {file_id}"}
+            resolved_files.append(filepath)
 
-        for filepath in resolved_files:
-            msg.attachments.add(str(filepath))
+        try:
+            mailbox = account.mailbox()
+            msg = mailbox.new_message()
+            msg.to.add(to)
+            msg.subject = subject
+            msg.body = body
 
-        msg.send()
+            for filepath in resolved_files:
+                msg.attachments.add(str(filepath))
 
-        att_note = f" with {len(resolved_files)} attachment(s)" if resolved_files else ""
-        return {"success": True, "message": f"Email sent: {subject}{att_note}"}
-    except Exception as e:
-        return {"success": False, "error": f"Failed to send email: {e}"}
+            msg.send()
+
+            att_note = f" with {len(resolved_files)} attachment(s)" if resolved_files else ""
+            return {"success": True, "message": f"Email sent from your account: {subject}{att_note}"}
+        except Exception as e:
+            return {"success": False, "error": f"Failed to send email: {e}"}
+
+    # Default: send from Norman's service account via SMTP
+    if not norman_email.is_configured():
+        return {"success": False, "error": "Norman's email is not configured on the server (NORMAN_EMAIL / NORMAN_PASSWORD)"}
+
+    return norman_email.send(
+        to=to,
+        subject=subject,
+        body=body,
+        attachments=attachments,
+    )
 
 
 # ── Calendar tools ───────────────────────────────────────────────────────────
@@ -398,7 +413,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "o365_send_email",
-        "description": "Send a new email, optionally with file attachments. To email a document, first export it (export_excel or export_sql_to_excel or export_pdf), then pass the file_id from the export result as an attachment. Always confirm the recipients, subject, and body with the user before sending.",
+        "description": "Send a new email, optionally with file attachments. By default, emails are sent from Norman's service account (norman@cobblestonefruit.com). Set send_as_user=true ONLY when the user explicitly asks to send from their own account or 'on my behalf'. To email a document, first export it (export_excel or export_sql_to_excel or export_pdf), then pass the file_id from the export result as an attachment. Always confirm the recipients, subject, and body with the user before sending.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -419,6 +434,10 @@ TOOL_DEFINITIONS = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "File IDs to attach (from export_excel/export_sql_to_excel/export_pdf results, e.g. 'navel_inventory_a1b2c3d4.xlsx')",
+                },
+                "send_as_user": {
+                    "type": "boolean",
+                    "description": "If true, send from the user's own Microsoft 365 account (requires O365 connection). Default false — sends from Norman's account.",
                 },
             },
             "required": ["to", "subject", "body"],
