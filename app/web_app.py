@@ -482,8 +482,11 @@ def _handle_incoming_email(email_data: dict):
 
     # Build a prompt for the agent with the email context
     prompt = (
-        f"You received an email in your inbox (norman@cobblestonefruit.com). "
-        f"Read it and reply appropriately using norman_reply_email.\n\n"
+        f"[SYSTEM: This is an automated incoming email notification. There is no logged-in user. "
+        f"You MUST use the norman_reply_email tool to reply — do NOT use o365_reply_email or o365_send_email "
+        f"as there is no user session available. You are replying as Norman from your own mailbox.]\n\n"
+        f"You received an email in your Norman mailbox (norman@cobblestonefruit.com). "
+        f"Reply to it using the norman_reply_email tool with the email_id provided below.\n\n"
         f"From: {from_addr}\n"
         f"Subject: {subject}\n"
         f"Email ID: {email_id}\n\n"
