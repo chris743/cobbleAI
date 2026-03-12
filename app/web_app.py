@@ -14,6 +14,7 @@ import os
 import sys
 import uuid
 import logging
+import threading
 from datetime import date as _date
 from pathlib import Path
 from dotenv import load_dotenv
@@ -39,6 +40,7 @@ app.logger.setLevel(logging.INFO)
 CORS(app, origins=["http://localhost:5000"], supports_credentials=True)
 
 CLERK_PUBLISHABLE_KEY = os.getenv("CLERK_PUBLISHABLE_KEY", "")
+NORMAN_WEBHOOK_SECRET = os.getenv("NORMAN_WEBHOOK_SECRET", "")
 
 
 @app.route("/")
@@ -437,6 +439,90 @@ def download_file(filename):
             "Content-Disposition": f'attachment; filename="{filename}"',
         },
     )
+
+
+# ── Norman Incoming Email Webhook ─────────────────────────────────────────────
+
+import norman_email as _norman_email
+import hmac
+
+NORMAN_ADDRESS = os.getenv("NORMAN_EMAIL", "norman@cobblestonefruit.com").lower()
+
+
+def _should_norman_reply(from_addr: str, subject: str, body: str) -> bool:
+    """Check reply rules: respond only to threads Norman started or emails addressed to him."""
+    subject_lower = (subject or "").lower().strip()
+    body_lower = (body or "").lower().strip()
+
+    # Rule 1: Reply to threads Norman started (Re: to something Norman sent)
+    if subject_lower.startswith("re:"):
+        return True
+
+    # Rule 2: Email explicitly addresses Norman
+    if body_lower.startswith("norman,") or body_lower.startswith("norman "):
+        return True
+    if "norman," in body_lower[:200]:
+        return True
+
+    return False
+
+
+def _handle_incoming_email(email_data: dict):
+    """Process an incoming email to Norman in a background thread."""
+    from_addr = email_data.get("from", "")
+    subject = email_data.get("subject", "")
+    body = email_data.get("body", "")
+    email_id = email_data.get("email_id", "")
+
+    app.logger.info(f"Norman webhook: from={from_addr}, subject={subject[:60]}")
+
+    if not _should_norman_reply(from_addr, subject, body):
+        app.logger.info(f"Norman skipping email (doesn't match reply rules): {subject}")
+        return
+
+    # Build a prompt for the agent with the email context
+    prompt = (
+        f"You received an email in your inbox (norman@cobblestonefruit.com). "
+        f"Read it and reply appropriately using norman_reply_email.\n\n"
+        f"From: {from_addr}\n"
+        f"Subject: {subject}\n"
+        f"Email ID: {email_id}\n\n"
+        f"Body:\n{body[:3000]}"
+    )
+
+    messages = [{"role": "user", "content": prompt}]
+
+    try:
+        response = run_agent_turn(messages, log_fn=app.logger.info)
+        app.logger.info(f"Norman auto-reply completed: {response[:200]}")
+    except Exception as e:
+        app.logger.exception(f"Norman auto-reply failed: {e}")
+
+
+@app.route("/norman/webhook", methods=["POST"])
+def norman_incoming_email():
+    """Webhook for Power Automate — called when Norman receives an email."""
+    # Verify webhook secret
+    secret = request.headers.get("X-Webhook-Secret", "")
+    if not NORMAN_WEBHOOK_SECRET:
+        abort(403, "Webhook secret not configured")
+    if not hmac.compare_digest(secret, NORMAN_WEBHOOK_SECRET):
+        abort(403, "Invalid webhook secret")
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data"}), 400
+
+    # Run in background so we don't block the Power Automate flow
+    thread = threading.Thread(
+        target=_handle_incoming_email,
+        args=(data,),
+        daemon=True,
+        name="norman-email-handler",
+    )
+    thread.start()
+
+    return jsonify({"ok": True, "message": "Processing email"})
 
 
 if __name__ == "__main__":
