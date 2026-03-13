@@ -15,6 +15,7 @@ tables:
   - dbo.harvestplanentry
   - dbo.harvestcontractors
   - dbo.processproductionruns
+  - dbo.VW_scoutingreport
 
 key_concepts:
   - "Harvest plans link grower blocks to contractors, rates, pools, and dates"
@@ -22,3 +23,7 @@ key_concepts:
   - "Production runs track actual packing/processing after fruit is harvested"
   - "grower_block_id references GABLOCKIDX from the block master data"
   - "source_database is typically 'COBBLESTONE' for CF-origin blocks"
+  - "Scouting reports capture pre-harvest fruit quality (Brix, acidity, color, size) and field conditions"
+  - "Always check recent scouting data when making harvest recommendations or pick plans"
+  - "Brix-to-acid ratio determines eating quality — higher ratio = sweeter. Export navels need 8:1+"
+  - "Peak Size from scouting predicts what sizes will dominate packout from a block"

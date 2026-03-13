@@ -1,151 +1,159 @@
-# Scouting Reports — Field-level fruit quality data (DM01)
-# Used for harvest planning decisions: when to pick, expected pack-out, quality assessment
+# Schema documentation for dbo.VW_scoutingreport
+# Field scouting reports - DM01 database
 
+name: dbo.VW_scoutingreport
+short_name: scoutingreport
+schema: dbo
+domain: harvest
 database: DM01
-table: dbo.VW_scoutingreport
+
 description: |
   Field scouting reports taken in orchards before harvest. Each report captures
   fruit quality metrics, yield estimates, and field conditions for a specific
   grower block. This data is critical for harvest planning — it tells you what
   the fruit looks like before it's picked.
 
+business_purpose: |
+  - Assess fruit readiness for harvest (Brix, acidity, color, firmness)
+  - Predict pack-out yield and grade splits (Fancy vs Choice vs CA STD)
+  - Identify peak sizes to cross-reference with inventory demand gaps
+  - Track field conditions (temp, humidity, irrigation, insect/defect issues)
+  - Prioritize which blocks to pick based on quality and market demand
+
 columns:
-  Id:
+  # === IDENTIFICATION ===
+  - name: Id
     type: int
-    description: Primary key
+    nullable: false
+    description: "Primary key"
 
-  Scouting Report Number:
+  - name: Scouting Report Number
     type: varchar
-    description: Unique report identifier
+    nullable: false
+    description: "Unique report identifier"
 
-  Date Time:
+  - name: Date Time
     type: datetime
-    description: When the scouting was performed
+    nullable: false
+    description: "When the scouting was performed"
 
-  Block Number Name:
+  - name: Block Number Name
     type: varchar
     description: "Grower block identifier (human-readable, e.g., 'Block 12 - Smith Ranch')"
 
-  Grower Name Number:
+  - name: Grower Name Number
     type: varchar
     description: "Combined grower name and number (e.g., 'Smith Farms #1234')"
 
-  Commodity:
+  - name: Commodity
     type: varchar
     description: "Fruit type (NAVEL, MANDARIN, LEMON, GRAPEFRUIT, etc.)"
 
-  # ── Quality Metrics ──────────────────────────────────────────────────────────
-
-  Brix:
+  # === QUALITY METRICS ===
+  - name: Brix
     type: decimal
     description: |
       Sugar content (degrees Brix). Higher = sweeter.
       Navels: 10-14 typical. Mandarins: 11-16.
       Minimum for harvest varies by variety and customer spec.
 
-  Acidity:
+  - name: Acidity
     type: decimal
     description: |
       Acid level (% citric acid). Affects taste balance with Brix.
       Brix-to-acid ratio is key: higher ratio = sweeter perceived taste.
       Export markets often require minimum ratio (e.g., 8:1 for navels).
 
-  Firmness:
+  - name: Firmness
     type: decimal
-    description: Fruit firmness measurement. Higher = firmer. Drops as fruit matures.
+    description: "Fruit firmness measurement. Higher = firmer. Drops as fruit matures."
 
-  Color Index:
+  - name: Color Index
     type: decimal
     description: |
       Color development score. Higher = more mature color.
       Important for grade determination — fruit must meet color standards
       for Fancy vs Choice grade.
 
-  Peak Size:
+  - name: Peak Size
     type: varchar
     description: |
       Most common fruit size in the block (e.g., '088', '072', '056').
       3-digit zero-padded. This is the size that will dominate packout
       from this block.
 
-  Second Peak Size:
+  - name: Second Peak Size
     type: varchar
-    description: Second most common size. Together with Peak Size, predicts size distribution.
+    description: "Second most common size. Together with Peak Size, predicts size distribution."
 
-  Size Pick:
+  - name: Size Pick
     type: varchar
-    description: Recommended size pick for this block based on scouting.
+    description: "Recommended size pick for this block based on scouting."
 
-  # ── Yield / Pack Estimates ───────────────────────────────────────────────────
-
-  Est Pack Out:
+  # === YIELD / PACK ESTIMATES ===
+  - name: Est Pack Out
     type: decimal
     description: |
       Estimated packable percentage of fruit from this block.
       E.g., 0.85 = 85% of bins received will be packable (rest is cull/juice).
 
-  Est Fancy %:
+  - name: Est Fancy %
     type: decimal
-    description: Estimated percentage that will grade Fancy (premium).
+    description: "Estimated percentage that will grade Fancy (premium)."
 
-  Est Choice %:
+  - name: Est Choice %
     type: decimal
-    description: Estimated percentage that will grade Choice.
+    description: "Estimated percentage that will grade Choice."
 
-  CA STD:
+  - name: CA STD
     type: decimal
-    description: Estimated percentage meeting California Standard grade.
+    description: "Estimated percentage meeting California Standard grade."
 
-  # ── Field Conditions ─────────────────────────────────────────────────────────
-
-  Temperature (F):
+  # === FIELD CONDITIONS ===
+  - name: Temperature (F)
     type: decimal
-    description: Field temperature at time of scouting (Fahrenheit).
+    description: "Field temperature at time of scouting (Fahrenheit)."
 
-  Humidity:
+  - name: Humidity
     type: decimal
-    description: Relative humidity at time of scouting.
+    description: "Relative humidity at time of scouting."
 
-  Irrigation Status:
+  - name: Irrigation Status
     type: varchar
     description: "Current irrigation state (e.g., 'Active', 'Dry', 'Recently Irrigated')."
 
-  Harvest Status:
+  - name: Harvest Status
     type: varchar
     description: "Current harvest state (e.g., 'Ready', 'Not Ready', 'In Progress', 'Complete')."
 
-  Insect Signs:
+  - name: Insect Signs
     type: varchar
-    description: Any insect damage or pest signs observed.
+    description: "Any insect damage or pest signs observed."
 
-  Defects:
+  - name: Defects
     type: varchar
-    description: Physical defects observed (sunburn, wind scar, splitting, etc.).
+    description: "Physical defects observed (sunburn, wind scar, splitting, etc.)."
 
-  # ── Notes ────────────────────────────────────────────────────────────────────
-
-  Observations:
+  # === NOTES ===
+  - name: Observations
     type: text
     description: |
       Free-text field notes from the scout. Often contains the most valuable
       information — maturity assessment, pick timing recommendations,
       block-specific issues, weather damage notes.
 
-  Follow Up Date:
+  - name: Follow Up Date
     type: date
-    description: When the block should be re-scouted.
+    description: "When the block should be re-scouted."
 
-  # ── Location ─────────────────────────────────────────────────────────────────
-
-  GPS Lat:
+  # === LOCATION ===
+  - name: GPS Lat
     type: decimal
-    description: Latitude of scouting location.
+    description: "Latitude of scouting location."
 
-  GPS Long:
+  - name: GPS Long
     type: decimal
-    description: Longitude of scouting location.
-
-# ── Sample Queries ──────────────────────────────────────────────────────────
+    description: "Longitude of scouting location."
 
 sample_queries:
   - name: Recent scouting reports
