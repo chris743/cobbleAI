@@ -1,0 +1,180 @@
+# Scouting Reports — Field-level fruit quality data (DM01)
+# Used for harvest planning decisions: when to pick, expected pack-out, quality assessment
+
+database: DM01
+table: dbo.VW_scoutingreport
+description: |
+  Field scouting reports taken in orchards before harvest. Each report captures
+  fruit quality metrics, yield estimates, and field conditions for a specific
+  grower block. This data is critical for harvest planning — it tells you what
+  the fruit looks like before it's picked.
+
+columns:
+  Id:
+    type: int
+    description: Primary key
+
+  Scouting Report Number:
+    type: varchar
+    description: Unique report identifier
+
+  Date Time:
+    type: datetime
+    description: When the scouting was performed
+
+  Block Number Name:
+    type: varchar
+    description: "Grower block identifier (human-readable, e.g., 'Block 12 - Smith Ranch')"
+
+  Grower Name Number:
+    type: varchar
+    description: "Combined grower name and number (e.g., 'Smith Farms #1234')"
+
+  Commodity:
+    type: varchar
+    description: "Fruit type (NAVEL, MANDARIN, LEMON, GRAPEFRUIT, etc.)"
+
+  # ── Quality Metrics ──────────────────────────────────────────────────────────
+
+  Brix:
+    type: decimal
+    description: |
+      Sugar content (degrees Brix). Higher = sweeter.
+      Navels: 10-14 typical. Mandarins: 11-16.
+      Minimum for harvest varies by variety and customer spec.
+
+  Acidity:
+    type: decimal
+    description: |
+      Acid level (% citric acid). Affects taste balance with Brix.
+      Brix-to-acid ratio is key: higher ratio = sweeter perceived taste.
+      Export markets often require minimum ratio (e.g., 8:1 for navels).
+
+  Firmness:
+    type: decimal
+    description: Fruit firmness measurement. Higher = firmer. Drops as fruit matures.
+
+  Color Index:
+    type: decimal
+    description: |
+      Color development score. Higher = more mature color.
+      Important for grade determination — fruit must meet color standards
+      for Fancy vs Choice grade.
+
+  Peak Size:
+    type: varchar
+    description: |
+      Most common fruit size in the block (e.g., '088', '072', '056').
+      3-digit zero-padded. This is the size that will dominate packout
+      from this block.
+
+  Second Peak Size:
+    type: varchar
+    description: Second most common size. Together with Peak Size, predicts size distribution.
+
+  Size Pick:
+    type: varchar
+    description: Recommended size pick for this block based on scouting.
+
+  # ── Yield / Pack Estimates ───────────────────────────────────────────────────
+
+  Est Pack Out:
+    type: decimal
+    description: |
+      Estimated packable percentage of fruit from this block.
+      E.g., 0.85 = 85% of bins received will be packable (rest is cull/juice).
+
+  Est Fancy %:
+    type: decimal
+    description: Estimated percentage that will grade Fancy (premium).
+
+  Est Choice %:
+    type: decimal
+    description: Estimated percentage that will grade Choice.
+
+  CA STD:
+    type: decimal
+    description: Estimated percentage meeting California Standard grade.
+
+  # ── Field Conditions ─────────────────────────────────────────────────────────
+
+  Temperature (F):
+    type: decimal
+    description: Field temperature at time of scouting (Fahrenheit).
+
+  Humidity:
+    type: decimal
+    description: Relative humidity at time of scouting.
+
+  Irrigation Status:
+    type: varchar
+    description: "Current irrigation state (e.g., 'Active', 'Dry', 'Recently Irrigated')."
+
+  Harvest Status:
+    type: varchar
+    description: "Current harvest state (e.g., 'Ready', 'Not Ready', 'In Progress', 'Complete')."
+
+  Insect Signs:
+    type: varchar
+    description: Any insect damage or pest signs observed.
+
+  Defects:
+    type: varchar
+    description: Physical defects observed (sunburn, wind scar, splitting, etc.).
+
+  # ── Notes ────────────────────────────────────────────────────────────────────
+
+  Observations:
+    type: text
+    description: |
+      Free-text field notes from the scout. Often contains the most valuable
+      information — maturity assessment, pick timing recommendations,
+      block-specific issues, weather damage notes.
+
+  Follow Up Date:
+    type: date
+    description: When the block should be re-scouted.
+
+  # ── Location ─────────────────────────────────────────────────────────────────
+
+  GPS Lat:
+    type: decimal
+    description: Latitude of scouting location.
+
+  GPS Long:
+    type: decimal
+    description: Longitude of scouting location.
+
+# ── Sample Queries ──────────────────────────────────────────────────────────
+
+sample_queries:
+  - name: Recent scouting reports
+    sql: |
+      SELECT [Date Time], [Grower Name Number], [Block Number Name],
+             Commodity, Brix, Acidity, [Color Index], [Peak Size],
+             [Est Pack Out], [Harvest Status], Observations
+      FROM dbo.VW_scoutingreport
+      WHERE [Date Time] >= DATEADD(day, -7, GETDATE())
+      ORDER BY [Date Time] DESC
+
+  - name: Blocks ready to harvest
+    sql: |
+      SELECT [Grower Name Number], [Block Number Name], Commodity,
+             Brix, Acidity, [Color Index], [Peak Size], [Est Pack Out],
+             [Est Fancy %], [Harvest Status], Observations
+      FROM dbo.VW_scoutingreport
+      WHERE [Harvest Status] = 'Ready'
+        AND [Date Time] >= DATEADD(day, -14, GETDATE())
+      ORDER BY Commodity, [Grower Name Number]
+
+  - name: Quality summary by commodity
+    sql: |
+      SELECT Commodity,
+             COUNT(*) as ReportCount,
+             AVG(Brix) as AvgBrix,
+             AVG(Acidity) as AvgAcidity,
+             AVG([Est Pack Out]) as AvgEstPackOut,
+             AVG([Est Fancy %]) as AvgFancyPct
+      FROM dbo.VW_scoutingreport
+      WHERE [Date Time] >= DATEADD(day, -14, GETDATE())
+      GROUP BY Commodity

@@ -395,6 +395,7 @@ Use `execute_sql` with `database: "DM01"` to query these tables:
 - **`dbo.harvestplanentry`** — Harvest plans: grower blocks, contractors, rates, dates, bins, pools, field reps
 - **`dbo.harvestcontractors`** — Harvest contractors: picking, trucking, forklift service providers
 - **`dbo.processproductionruns`** — Production runs: actual packing/processing records for harvested fruit
+- **`dbo.VW_scoutingreport`** — Field scouting reports: fruit quality (Brix, acidity, color, firmness), size distribution, estimated pack-out, harvest readiness, field conditions, and scout observations
 
 When the user asks about harvest plans, contractors, production runs, or any harvest-related read query, use `execute_sql` against DM01. If you're unsure of the column names, explore the schema first:
 ```sql
@@ -425,6 +426,23 @@ Use `hp_` tools to create, update, or delete records:
 2. Find contractors: `SELECT * FROM dbo.harvestcontractors` on DM01
 3. Find the field rep / pool: query DM01 for existing values
 4. Create the plan: `hp_create_harvest_plan` with the collected IDs and rates
+
+### Scouting Reports & Harvest Decisions
+
+Field scouting reports (`dbo.VW_scoutingreport` on DM01) are taken in orchards before picking. **Always check recent scouting data when making harvest recommendations.** Key metrics:
+
+- **Brix** (sugar) + **Acidity** → Brix-to-acid ratio determines eating quality. Higher ratio = sweeter. Export markets often require 8:1+ for navels.
+- **Color Index** → Determines grade potential (Fancy vs Choice). Low color = not ready.
+- **Peak Size / Second Peak Size** → Predicts what sizes will dominate packout from the block. Cross-reference with current inventory and demand to decide pick priority.
+- **Est Pack Out / Est Fancy % / Est Choice %** → Yield predictions. Use these to estimate how many bins of each grade a block will produce.
+- **Harvest Status** → "Ready" means the block can be picked now. "Not Ready" means wait.
+- **Observations** → Free-text notes from the scout. Often has the most actionable info — read these carefully.
+
+When building harvest plans or advising on pick timing:
+1. Query recent scouting reports (last 7-14 days) for the blocks in question
+2. Factor in Brix/acidity ratios, color development, and estimated grade splits
+3. Cross-reference with current inventory levels and open orders — prioritize picking blocks whose peak sizes match demand gaps
+4. Flag blocks where Harvest Status is "Ready" but no harvest plan exists yet
 
 ### Important Notes
 
