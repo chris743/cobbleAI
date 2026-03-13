@@ -16,6 +16,7 @@ tables:
   - dbo.harvestcontractors
   - dbo.processproductionruns
   - dbo.VW_scoutingreport
+  - dbo.TBL_COMMODITY_VARIETY_SEASONALITY
 
 key_concepts:
   - "Harvest plans link grower blocks to contractors, rates, pools, and dates"
@@ -27,3 +28,6 @@ key_concepts:
   - "Always check recent scouting data when making harvest recommendations or pick plans"
   - "Brix-to-acid ratio determines eating quality — higher ratio = sweeter. Export navels need 8:1+"
   - "Peak Size from scouting predicts what sizes will dominate packout from a block"
+  - "Variety seasonality matters most for NAVELS: Early (Beck, Fisher, Fukumoto, Newhall, M7, Gillette), Mid (Washington, Atwood, TI), Late (Powell, Spring, Lane, Chislet, Autumn Gold, Barnfield)"
+  - "Do NOT pick late-season navel varieties early — quality develops later in the season"
+  - "Other commodities (mandarin, lemon, grapefruit, valencia) are 'All Season' — no significant variety timing swing"

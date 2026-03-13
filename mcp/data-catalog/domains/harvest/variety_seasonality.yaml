@@ -1,0 +1,111 @@
+# Schema documentation for dbo.TBL_COMMODITY_VARIETY_SEASONALITY
+# Variety seasonality within a commodity's growing season - DM01 database
+
+name: dbo.TBL_COMMODITY_VARIETY_SEASONALITY
+short_name: variety_seasonality
+schema: dbo
+domain: harvest
+database: DM01
+
+description: |
+  Maps citrus varieties to their seasonality within the commodity's growing season.
+  This is NOT about when the overall commodity season runs — it's about WHEN within
+  that season a specific variety is at its peak for picking.
+
+  This is especially critical for NAVELS, where variety determines pick timing:
+  - Early Season varieties (Beck, Fisher, Fukumoto, Newhall, M7, Gillette) are picked first
+  - Mid Season varieties (Washington, Atwood, TI) follow
+  - Late Season varieties (Powell, Spring, Lane, Chislet, Autumn Gold, Barnfield) finish the season
+
+  For all other commodities (Mandarin, Lemon, Grapefruit, Valencia, etc.), varieties
+  are marked "All Season" because there isn't a significant timing swing.
+
+  Use this data to:
+  - Prioritize which grower blocks to pick based on variety timing
+  - Avoid picking late-season navels too early (quality suffers)
+  - Match harvest plans to the current point in the navel season
+  - Explain to users why certain blocks should wait or be picked immediately
+
+business_purpose: |
+  - Determine optimal pick order for navel varieties
+  - Prevent premature harvest of late-season varieties
+  - Guide harvest planning decisions based on where we are in the season
+  - Cross-reference with scouting reports to validate readiness vs expected timing
+
+columns:
+  - name: CommodityFamousName
+    type: varchar
+    description: "Commodity code as used in the system (e.g., 'NAVEL', 'MANDARIN', 'LEMON')"
+
+  - name: CommodityCommonName
+    type: varchar
+    description: "Human-readable commodity name (e.g., 'Navel', 'Mandarin', 'Lemon')"
+
+  - name: VarietyFamousName
+    type: varchar
+    nullable: true
+    description: "Variety code as used in the system (e.g., 'FUKUMOTO', 'WASHINGTON', 'POWELL')"
+
+  - name: VarietyCommonName
+    type: varchar
+    nullable: true
+    description: "Human-readable variety name (e.g., 'Fukumoto', 'Washington', 'Powell')"
+
+  - name: Seasonality
+    type: varchar
+    description: |
+      When this variety should be picked within its commodity season.
+      Values: 'Early Season', 'Mid Season', 'Late Season', 'All Season'
+      Only navels have meaningful Early/Mid/Late splits. All other commodities are 'All Season'.
+
+# ── Navel Variety Seasonality Reference ──────────────────────────────────────
+# This is the key business data — embed it so the agent always has it:
+
+navel_seasonality:
+  early_season:
+    description: "Picked first in the navel season. Typically ready earliest."
+    varieties:
+      - Beck
+      - Fisher
+      - Fukumoto
+      - Gillette
+      - M7
+      - Newhall
+
+  mid_season:
+    description: "Core of the navel season. Most common varieties."
+    varieties:
+      - Atwood
+      - TI
+      - Washington
+
+  late_season:
+    description: "Finish the navel season. Should NOT be picked early — quality develops later."
+    varieties:
+      - Autumn Gold
+      - Barnfield
+      - Chislet
+      - Lane
+      - Powell
+      - Spring
+
+sample_queries:
+  - name: Navel variety seasonality
+    sql: |
+      SELECT VarietyCommonName, Seasonality
+      FROM dbo.TBL_COMMODITY_VARIETY_SEASONALITY
+      WHERE CommodityFamousName = 'NAVEL'
+        AND VarietyFamousName IS NOT NULL
+      ORDER BY
+        CASE Seasonality
+          WHEN 'Early Season' THEN 1
+          WHEN 'Mid Season' THEN 2
+          WHEN 'Late Season' THEN 3
+        END, VarietyCommonName
+
+  - name: All varieties by commodity
+    sql: |
+      SELECT CommodityCommonName, VarietyCommonName, Seasonality
+      FROM dbo.TBL_COMMODITY_VARIETY_SEASONALITY
+      WHERE VarietyFamousName IS NOT NULL
+      ORDER BY CommodityCommonName, Seasonality, VarietyCommonName
